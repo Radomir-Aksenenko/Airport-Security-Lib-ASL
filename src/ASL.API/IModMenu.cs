@@ -3,7 +3,8 @@ using System;
 namespace ASL.Api
 {
     /// <summary>
-    /// Register simple controls into ASL's shared in-game menu (toggle it in-game with <b>F8</b>).
+    /// Register simple controls into ASL's shared in-game menu (open it in-game with <b>F8</b> or the
+    /// <b>Mods</b> button ASL adds to the main menu).
     /// Call these in <see cref="AslMod.OnLoad"/> via <see cref="IModContext.Menu"/>; your controls
     /// appear grouped under your mod's name. All callbacks run on the main thread.
     /// </summary>

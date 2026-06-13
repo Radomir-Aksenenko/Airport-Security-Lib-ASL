@@ -37,7 +37,7 @@ Airport Security Sucks/
 | **Content mods** (`type: content`) | ✅ | Texture swaps: managed PNG decode → in-place write (readable) or reassign `Material.mainTexture` / UI `Image.sprite` / `RawImage.texture` (non-readable) + texture-name discovery |
 | Event bus | ✅ | `Update`, `SceneChanged`, `LocalPlayerChanged` |
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
-| In-game menu (F8) | ✅ | `IModMenu` — mods register toggles / buttons / sliders into a shared overlay |
+| In-game menu | ✅ | `IModMenu` — toggles / buttons / sliders in a shared overlay; opened with **F8** or the **Mods** button ASL adds to the main menu |
 | Networking awareness | ✅ | `IAslNet` — host/client/connected state + connection-count changes (Mirror). Message transport is planned, see [docs/networking.md](docs/networking.md) |
 
 ## The 30-second mod

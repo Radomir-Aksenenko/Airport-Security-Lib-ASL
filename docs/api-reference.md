@@ -112,8 +112,9 @@ Guidance:
 
 ## Menu
 
-`ctx.Menu` (`IModMenu`). Register controls into ASL's shared in-game menu, toggled with **F8**.
-Controls appear grouped under your mod's name; callbacks run on the main thread.
+`ctx.Menu` (`IModMenu`). Register controls into ASL's shared in-game menu. Players open it with
+**F8** or via the **Mods** button ASL adds to the game's main menu. Controls appear grouped under
+your mod's name; callbacks run on the main thread.
 
 ```csharp
 public interface IModMenu

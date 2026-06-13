@@ -57,6 +57,7 @@ namespace ASL
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");
 
             AttachEventDriver();
+            MainMenuInjector.Init(Logger, Bus);   // adds a "Mods" button to the main menu
 
             // mods/ lives next to the game executable so it is easy for players to find.
             var modsRoot = Path.Combine(Paths.GameRootPath, "mods");

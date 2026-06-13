@@ -94,6 +94,9 @@ namespace ASL
 
             // Networking awareness (connection-count changes), polled on the same throttle.
             AslPlugin.Net?.Poll();
+
+            // Try to add the "Mods" button to the main menu (bounded retries after scene changes).
+            MainMenuInjector.Tick();
         }
 
         private void OnGUI()
