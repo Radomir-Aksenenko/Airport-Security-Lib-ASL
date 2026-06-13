@@ -11,10 +11,10 @@ namespace ASL
 {
     /// <summary>
     /// Adds a "Mods" button to the game's main menu (alongside Play / Settings / Quit) that opens the
-    /// ASL menu. Works by cloning the existing <b>Settings</b> button, relabelling it, and rewiring its
-    /// click — no dependency on the game's menu class (buttons are matched by their TMP label). Only
-    /// the main menu is targeted (it has a "Play" button), and the inject is retried for a short window
-    /// after each scene change so it catches the menu once its UI exists.
+    /// ASL menu, and captures a copy of a real menu button as the template the native menu clones for
+    /// its rows. Buttons are matched by their TMP label (no dependency on the game's menu class); only
+    /// the main menu is targeted (it has a "Play" button). Retried for a short window after each scene
+    /// change so it catches the menu once its UI exists.
     /// </summary>
     internal static class MainMenuInjector
     {
@@ -29,7 +29,6 @@ namespace ASL
             events.SceneChanged += _ => _attempts = 12;   // re-try when (re)entering the menu
         }
 
-        // Called from the framework's throttled tick; cheap no-op once injected or off the menu.
         public static void Tick()
         {
             if (_attempts <= 0) return;
@@ -60,11 +59,14 @@ namespace ASL
                 else if (text.Equals("Settings", StringComparison.OrdinalIgnoreCase)) settingsBtn = b;
             }
 
-            // Only inject on the MAIN menu (it has a Play button) and only if we can clone Settings.
+            // Only on the MAIN menu (it has a Play button) and only if we can clone Settings.
             if (!hasPlay || settingsBtn == null) return false;
 
-            var parent = settingsBtn.transform.parent;
-            var clone = UnityEngine.Object.Instantiate(settingsBtn.gameObject, parent);
+            // Capture a template for the native menu (a separate, stored, deactivated clone).
+            AslPlugin.Ui?.SetTemplate(UnityEngine.Object.Instantiate(settingsBtn.gameObject));
+
+            // Add the visible "Mods" button next to Settings.
+            var clone = UnityEngine.Object.Instantiate(settingsBtn.gameObject, settingsBtn.transform.parent);
             clone.name = CloneName;
 
             var cloneLabel = clone.GetComponentInChildren<TMP_Text>(true);
@@ -77,8 +79,11 @@ namespace ASL
             click.RemoveAllListeners();
             click.AddListener(DelegateSupport.ConvertDelegate<UnityAction>(new Action(OpenMenu)));
 
-            // Slot it right after Settings.
             clone.transform.SetSiblingIndex(settingsBtn.transform.GetSiblingIndex() + 1);
+
+            // Re-run the button's enable hooks so its entrance/idle animation plays like the others.
+            clone.SetActive(false);
+            clone.SetActive(true);
 
             _log.LogInfo("[menu] Added 'Mods' button to the main menu.");
             return true;

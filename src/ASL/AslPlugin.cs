@@ -35,8 +35,11 @@ namespace ASL
         /// <summary>Applies no-code content mods (texture swaps, ...).</summary>
         internal static ContentRegistry Content { get; private set; }
 
-        /// <summary>The shared in-game mod menu (F8). Surfaced to mods through <c>IModContext.Menu</c>.</summary>
+        /// <summary>The shared mod-menu registry (F8 / Mods button). Surfaced to mods via <c>IModContext.Menu</c>.</summary>
         internal static MenuManager Menu { get; private set; }
+
+        /// <summary>Native (uGUI) renderer for the mod menu, in the game's style.</summary>
+        internal static NativeMenu Ui { get; private set; }
 
         /// <summary>Networking awareness. Surfaced to mods through <c>IModContext.Net</c>.</summary>
         internal static NetState Net { get; private set; }
@@ -51,7 +54,8 @@ namespace ASL
             Bus = new EventBus(Logger);
             Hooks = new HookManager(Harmony, Logger);
             Content = new ContentRegistry(Logger, Bus);
-            Menu = new MenuManager(Logger);
+            Menu = new MenuManager();
+            Ui = new NativeMenu(Logger, Menu);
             Net = new NetState(Logger);
 
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");

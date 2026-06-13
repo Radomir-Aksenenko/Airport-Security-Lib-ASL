@@ -98,10 +98,5 @@ namespace ASL
             // Try to add the "Mods" button to the main menu (bounded retries after scene changes).
             MainMenuInjector.Tick();
         }
-
-        private void OnGUI()
-        {
-            AslPlugin.Menu?.Draw();
-        }
     }
 }
