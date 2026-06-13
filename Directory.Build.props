@@ -1,0 +1,31 @@
+<Project>
+
+  <!--
+    Shared build settings for every project in the ASL solution.
+    A modder cloning this repo overrides GamePath to point at their own install,
+    either by editing the line below or passing /p:GamePath="..." to dotnet build.
+  -->
+  <PropertyGroup>
+    <!-- Absolute path to the installed game (contains the BepInEx folder). -->
+    <GamePath Condition="'$(GamePath)' == ''">D:\Games\Steam\steamapps\common\Airport Security Sucks!</GamePath>
+
+    <!-- Copy build output into BepInEx\plugins after each build, for quick in-game testing. -->
+    <DeployToGame Condition="'$(DeployToGame)' == ''">true</DeployToGame>
+
+    <!-- BepInEx 6 IL2CPP plugins run on the .NET 6 runtime bundled with the game. -->
+    <TargetFramework>net6.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <Product>ASL - Airport Security Lib</Product>
+    <Authors>Radomir Aksenenko</Authors>
+    <Company>Radomir Aksenenko</Company>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

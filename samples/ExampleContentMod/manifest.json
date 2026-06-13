@@ -1,0 +1,14 @@
+{
+  "id": "com.asl.examplecontent",
+  "name": "Example Content Mod",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "A no-code content mod: swaps a named game texture for a bundled PNG.",
+  "type": "content",
+  "content": {
+    "listTextureNames": true,
+    "textures": [
+      { "target": "star_gray", "file": "example.png" }
+    ]
+  }
+}

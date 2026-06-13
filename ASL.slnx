@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/HelloMod/HelloMod.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/ASL.API/ASL.API.csproj" />
+    <Project Path="src/ASL/ASL.csproj" />
+  </Folder>
+</Solution>

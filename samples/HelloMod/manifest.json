@@ -1,0 +1,9 @@
+{
+  "id": "com.asl.hellomod",
+  "name": "Hello Mod",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "Sample ASL mod: logs a line from OnLoad to prove the mods/ loader works.",
+  "type": "dll",
+  "entry": "HelloMod.dll"
+}

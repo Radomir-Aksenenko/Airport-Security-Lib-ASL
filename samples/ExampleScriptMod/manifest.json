@@ -1,0 +1,9 @@
+{
+  "id": "com.asl.examplescript",
+  "name": "Example Script Mod",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "A no-build C# script mod, compiled at runtime by ASL via Roslyn.",
+  "type": "script",
+  "entry": "Main.cs"
+}

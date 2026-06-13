@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sample / template mod. This is what a third-party mod project looks like:
+    reference ASL.API (Private=false — ASL supplies it at runtime), reference the game's
+    interop assemblies for any game types you touch in event handlers, subclass AslMod,
+    build; the output lands in <GamePath>\mods\HelloMod\.
+  -->
+  <PropertyGroup>
+    <AssemblyName>HelloMod</AssemblyName>
+    <RootNamespace>HelloMod</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ASL.API\ASL.API.csproj" Private="false" />
+  </ItemGroup>
+
+  <!-- Game interop needed because OnLocalPlayerChanged handles a MetaPlayer. -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GamePath)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mirror">
+      <HintPath>$(GamePath)\BepInEx\interop\Mirror.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Deploy the built mod (dll + manifest) into the game's mods/ folder for testing. -->
+  <Target Name="DeploySampleMod" AfterTargets="Build">
+    <PropertyGroup>
+      <ModOut>$(GamePath)\mods\HelloMod</ModOut>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModOut)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="HelloMod sample deployed -> $(ModOut)" />
+  </Target>
+
+</Project>
