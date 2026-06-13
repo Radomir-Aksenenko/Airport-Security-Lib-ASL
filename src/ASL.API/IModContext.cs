@@ -24,6 +24,12 @@ namespace ASL.Api
 
         /// <summary>Opt-in Harmony hooks on game methods (advanced; installed only when used).</summary>
         IModHooks Hooks { get; }
+
+        /// <summary>Register controls into ASL's shared in-game menu (toggle with F8).</summary>
+        IModMenu Menu { get; }
+
+        /// <summary>Read-only networking awareness (host/client/connected, connection count).</summary>
+        IAslNet Net { get; }
     }
 
     /// <summary>

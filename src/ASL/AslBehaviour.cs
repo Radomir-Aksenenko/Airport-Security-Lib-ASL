@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Metater;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -6,15 +7,21 @@ using UnityEngine.SceneManagement;
 namespace ASL
 {
     /// <summary>
-    /// Injected MonoBehaviour that drives the event bus. The per-frame cost is deliberately tiny:
-    /// only the (allocation-free) Update event fires every frame. Scene and local-player changes
-    /// are detected by a throttled poll a few times per second, which keeps IL2CPP interop and
-    /// GC pressure off the hot path. Created once, kept alive across scenes.
+    /// Injected MonoBehaviour that drives the framework: the per-frame event tick, the throttled
+    /// scene/local-player polling, the F8 menu toggle, and the IMGUI menu render. Per-frame cost is
+    /// deliberately tiny (only the alloc-free Update event + a key check run every frame). Created
+    /// once, kept alive across scenes.
     /// </summary>
     internal sealed class AslBehaviour : MonoBehaviour
     {
         // Required ctor for IL2CPP-injected MonoBehaviours.
         public AslBehaviour(IntPtr ptr) : base(ptr) { }
+
+        // Win32 key state — reliable regardless of the game's input system (same approach BepInEx
+        // mods commonly use on this build). F8 toggles the mod menu.
+        [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+        private const int VK_F8 = 0x77;
+        private bool _wasToggleDown;
 
         private const float PollInterval = 0.5f;
         private float _pollTimer;
@@ -25,6 +32,22 @@ namespace ASL
 
         private void Update()
         {
+            // Menu toggle — checked every frame for responsiveness.
+            var menu = AslPlugin.Menu;
+            if (menu != null)
+            {
+                bool down = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
+                if (down && !_wasToggleDown) menu.Visible = !menu.Visible;
+                _wasToggleDown = down;
+
+                if (menu.Visible)
+                {
+                    // Free the cursor so the menu is clickable during gameplay.
+                    Cursor.visible = true;
+                    Cursor.lockState = CursorLockMode.None;
+                }
+            }
+
             var bus = AslPlugin.Bus;
             if (bus == null) return;
 
@@ -68,6 +91,14 @@ namespace ASL
                 }
             }
             catch { /* player subsystem not ready yet */ }
+
+            // Networking awareness (connection-count changes), polled on the same throttle.
+            AslPlugin.Net?.Poll();
+        }
+
+        private void OnGUI()
+        {
+            AslPlugin.Menu?.Draw();
         }
     }
 }

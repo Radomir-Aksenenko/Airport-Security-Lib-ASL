@@ -32,6 +32,8 @@ public interface IModContext
     IModLogger  Log          { get; }  // per-mod logger
     IAslEvents  Events       { get; }  // game events
     IModHooks   Hooks        { get; }  // opt-in Harmony hooks
+    IModMenu    Menu         { get; }  // in-game menu (F8)
+    IAslNet     Net          { get; }  // networking awareness
 }
 ```
 
@@ -107,6 +109,49 @@ Guidance:
   same method. Your mod should handle `false` gracefully.
 - Each target method is patched once; multiple callbacks on the same method are dispatched in turn,
   each isolated so one throwing callback doesn't stop the others.
+
+## Menu
+
+`ctx.Menu` (`IModMenu`). Register controls into ASL's shared in-game menu, toggled with **F8**.
+Controls appear grouped under your mod's name; callbacks run on the main thread.
+
+```csharp
+public interface IModMenu
+{
+    void AddLabel(string text);
+    void AddToggle(string label, bool initial, Action<bool> onChanged);
+    void AddButton(string label, Action onClick);
+    void AddSlider(string label, float min, float max, float initial, Action<float> onChanged);
+}
+```
+
+Example:
+```csharp
+ctx.Menu.AddToggle("God mode", false, on => _god = on);
+ctx.Menu.AddButton("Give item", () => GiveItem());
+ctx.Menu.AddSlider("Speed", 1f, 10f, 5f, v => _speed = v);
+```
+
+## Networking
+
+`ctx.Net` (`IAslNet`). Read-only networking awareness (the game uses Mirror).
+
+```csharp
+public interface IAslNet
+{
+    bool IsOnline { get; }            // server and/or client active
+    bool IsServer { get; }            // we run the server (host or dedicated)
+    bool IsClient { get; }            // we run a client (incl. host's local client)
+    bool IsHost  { get; }             // server + client
+    bool IsConnectedClient { get; }   // our client is connected
+    int  ConnectionCount { get; }     // server-side connected clients
+    event Action<int> ConnectionsChanged;   // server-side, fires with the new count
+}
+```
+
+This is awareness only — ASL does **not yet** provide a custom-message transport (sending data
+between clients). See [networking.md](networking.md) for the IL2CPP/Mirror constraint behind that
+and the planned approach.
 
 ## `AslInfo` (advanced)
 

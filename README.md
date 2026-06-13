@@ -24,6 +24,7 @@ Airport Security Sucks/
 - [manifest.json reference](docs/manifest.md)
 - [API reference](docs/api-reference.md) — `IModContext`, events, hooks
 - [Building ASL from source](docs/building.md)
+- [Networking (Mirror)](docs/networking.md) — `IAslNet`, and the message-transport plan
 - [Troubleshooting & IL2CPP notes](docs/troubleshooting.md)
 
 ## What works today
@@ -36,6 +37,8 @@ Airport Security Sucks/
 | **Content mods** (`type: content`) | ✅ | Texture swaps: managed PNG decode → in-place write (readable) or reassign `Material.mainTexture` / UI `Image.sprite` / `RawImage.texture` (non-readable) + texture-name discovery |
 | Event bus | ✅ | `Update`, `SceneChanged`, `LocalPlayerChanged` |
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
+| In-game menu (F8) | ✅ | `IModMenu` — mods register toggles / buttons / sliders into a shared overlay |
+| Networking awareness | ✅ | `IAslNet` — host/client/connected state + connection-count changes (Mirror). Message transport is planned, see [docs/networking.md](docs/networking.md) |
 
 ## The 30-second mod
 
@@ -111,12 +114,13 @@ docs/                        documentation
 
 Rough order of what's next:
 
-- **Multiplayer (Mirror) sync** — keep custom content/state consistent across clients.
+- **Multiplayer (Mirror) message transport** — awareness (host/client/connections) ships now;
+  sending custom data between clients is next, and needs a two-client test (see
+  [docs/networking.md](docs/networking.md)).
 - **Richer content** — atlas sub-sprites and non-main shader slots for texture swaps; more content
   types (audio, prefab/value tweaks) driven from the manifest.
 - **More built-in game events** — NPC spawned, round start/end, contraband scans — surfaced through
   the event bus (built on the opt-in hook system).
-- **In-game mod menu** — a shared config/UI surface mods can register into.
 - **Stable 1.0 API** — freeze `ASL.API`, ship a reference/NuGet package for mod authors, adopt semver.
 - **Distribution** — a Thunderstore package so players install ASL and mods in one click.
 

@@ -35,6 +35,12 @@ namespace ASL
         /// <summary>Applies no-code content mods (texture swaps, ...).</summary>
         internal static ContentRegistry Content { get; private set; }
 
+        /// <summary>The shared in-game mod menu (F8). Surfaced to mods through <c>IModContext.Menu</c>.</summary>
+        internal static MenuManager Menu { get; private set; }
+
+        /// <summary>Networking awareness. Surfaced to mods through <c>IModContext.Net</c>.</summary>
+        internal static NetState Net { get; private set; }
+
         private ModLoader _loader;
 
         public override void Load()
@@ -45,6 +51,8 @@ namespace ASL
             Bus = new EventBus(Logger);
             Hooks = new HookManager(Harmony, Logger);
             Content = new ContentRegistry(Logger, Bus);
+            Menu = new MenuManager(Logger);
+            Net = new NetState(Logger);
 
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");
 
@@ -52,7 +60,7 @@ namespace ASL
 
             // mods/ lives next to the game executable so it is easy for players to find.
             var modsRoot = Path.Combine(Paths.GameRootPath, "mods");
-            _loader = new ModLoader(Logger, modsRoot, Bus, Hooks, Content);
+            _loader = new ModLoader(Logger, modsRoot, Bus, Hooks, Content, Menu, Net);
             _loader.DiscoverAndLoad();
 
             Logger.LogInfo("Core online.");

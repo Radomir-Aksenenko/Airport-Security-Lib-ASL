@@ -177,5 +177,7 @@ Notes:
 - `ctx.ModId` / `ctx.ModName` — your manifest identity.
 - `ctx.Events` — the [event bus](api-reference.md#events).
 - `ctx.Hooks` — [opt-in Harmony hooks](api-reference.md#hooks).
+- `ctx.Menu` — the [in-game menu](api-reference.md#menu) (F8): register toggles, buttons, sliders.
+- `ctx.Net` — [networking awareness](networking.md): host/client/connected state, connection changes.
 
 See the full [API reference](api-reference.md).

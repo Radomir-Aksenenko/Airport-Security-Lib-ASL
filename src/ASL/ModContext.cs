@@ -12,9 +12,11 @@ namespace ASL
         public IModLogger Log { get; }
         public IAslEvents Events { get; }
         public IModHooks Hooks { get; }
+        public IModMenu Menu { get; }
+        public IAslNet Net { get; }
 
         public ModContext(string modId, string modName, string modDirectory,
-                          ManualLogSource logSource, IAslEvents events, IModHooks hooks)
+                          ManualLogSource logSource, IAslEvents events, IModHooks hooks, IModMenu menu, IAslNet net)
         {
             ModId = modId;
             ModName = modName;
@@ -22,6 +24,8 @@ namespace ASL
             Log = new ModLogger(logSource);
             Events = events;
             Hooks = hooks;
+            Menu = menu;
+            Net = net;
         }
     }
 

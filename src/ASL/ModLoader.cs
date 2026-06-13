@@ -22,6 +22,8 @@ namespace ASL
         private readonly IAslEvents _bus;
         private readonly IModHooks _hooks;
         private readonly ContentRegistry _content;
+        private readonly MenuManager _menu;
+        private readonly IAslNet _net;
         private readonly List<LoadedMod> _loaded = new();
 
         private static readonly JsonSerializerOptions JsonOpts = new()
@@ -31,13 +33,15 @@ namespace ASL
             AllowTrailingCommas = true,
         };
 
-        public ModLoader(ManualLogSource log, string modsRoot, IAslEvents bus, IModHooks hooks, ContentRegistry content)
+        public ModLoader(ManualLogSource log, string modsRoot, IAslEvents bus, IModHooks hooks, ContentRegistry content, MenuManager menu, IAslNet net)
         {
             _log = log;
             _modsRoot = modsRoot;
             _bus = bus;
             _hooks = hooks;
             _content = content;
+            _menu = menu;
+            _net = net;
         }
 
         public IReadOnlyList<LoadedMod> Loaded => _loaded;
@@ -217,7 +221,7 @@ namespace ASL
 
             var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
             var modLog = BepInEx.Logging.Logger.CreateLogSource(display);
-            var ctx = new ModContext(manifest.Id, display, dir, modLog, _bus, _hooks);
+            var ctx = new ModContext(manifest.Id, display, dir, modLog, _bus, _hooks, _menu.For(display), _net);
 
             try
             {
