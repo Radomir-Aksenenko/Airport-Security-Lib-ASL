@@ -2,6 +2,9 @@
 [Bb]in/
 [Oo]bj/
 
+# Release artifacts (publish via GitHub Releases / Thunderstore, not the repo)
+dist/
+
 # Visual Studio / Rider
 .vs/
 .idea/
