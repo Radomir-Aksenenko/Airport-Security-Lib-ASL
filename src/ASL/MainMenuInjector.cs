@@ -21,6 +21,8 @@ namespace ASL
         private const string CloneName = "ASL_ModsButton";
         private static ManualLogSource _log;
         private static int _attempts;
+        private static GameObject _modsButton;   // the live "Mods" button, for re-localizing
+        private static string _lastLang;
 
         public static void Init(ManualLogSource log, IAslEvents events)
         {
@@ -69,7 +71,8 @@ namespace ASL
             var clone = UnityEngine.Object.Instantiate(settingsBtn.gameObject, settingsBtn.transform.parent);
             clone.name = CloneName;
 
-            UiUtil.SetLabel(clone, "Mods");   // strips the localizer so it stays "Mods", not "Settings"
+            UiUtil.SetLabel(clone, Loc.Mods());   // localized; also strips the game's localizer so it stays put
+            ApplyModsIcon(clone);
 
             var btn = clone.GetComponent<Button>();
             var click = btn.onClick;
@@ -84,6 +87,9 @@ namespace ASL
             clone.SetActive(false);
             clone.SetActive(true);
 
+            _modsButton = clone;
+            _lastLang = Loc.CurrentLanguage();
+
             _log.LogInfo("[menu] Added 'Mods' button to the main menu.");
             return true;
         }
@@ -91,6 +97,41 @@ namespace ASL
         private static void OpenMenu()
         {
             if (AslPlugin.Menu != null) AslPlugin.Menu.Visible = !AslPlugin.Menu.Visible;
+        }
+
+        /// <summary>Re-localizes the Mods button when the player changes language. Cheap; polled.</summary>
+        public static void PollLanguage()
+        {
+            try
+            {
+                var cur = Loc.CurrentLanguage();
+                if (cur == _lastLang) return;
+                _lastLang = cur;
+                if (_modsButton != null) UiUtil.SetLabel(_modsButton, Loc.Mods());
+            }
+            catch { }
+        }
+
+        // Replace the cloned button's icon (a gear) with the custom Mods icon. Targets a child icon
+        // image only — never the button's own background panel.
+        private static void ApplyModsIcon(GameObject buttonGo)
+        {
+            try
+            {
+                var spr = UiUtil.ModsIcon();
+                if (spr == null) return;
+
+                Image iconImg = null;
+                var ih = buttonGo.transform.Find("IconHolder");
+                if (ih != null) iconImg = ih.GetComponentInChildren<Image>(true);
+                if (iconImg == null)
+                {
+                    var im = buttonGo.transform.Find("Image");
+                    if (im != null) iconImg = im.GetComponent<Image>();
+                }
+                if (iconImg != null) iconImg.sprite = spr;
+            }
+            catch (Exception ex) { _log.LogWarning($"[menu] set mods icon failed: {ex.Message}"); }
         }
     }
 }

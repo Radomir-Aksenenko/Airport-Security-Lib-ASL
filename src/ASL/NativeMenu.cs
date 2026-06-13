@@ -9,25 +9,28 @@ using UnityEngine.UI;
 namespace ASL
 {
     /// <summary>
-    /// Renders the mod menu natively (uGUI), in the game's own style — no IMGUI. Each row is a clone
-    /// of a real game menu button (captured by <see cref="MainMenuInjector"/>), so rows inherit the
-    /// game's LED-panel look, font, and hover animation.
+    /// Renders the mod menu natively (uGUI), in the game's own style — no IMGUI. A dark backdrop, a
+    /// centred panel that borrows the Settings screen's sprite, and rows that are clones of a real
+    /// game menu button (captured by <see cref="MainMenuInjector"/>) so they inherit the LED-panel
+    /// look, font, and hover animation.
     ///
-    /// Two pages: the root lists one button per mod; clicking a mod opens that mod's settings page
-    /// (its registered controls) with a Back button. Toggles/sliders render as click-to-change rows.
+    /// Two pages: the root lists one button per mod; selecting a mod opens its settings page (its
+    /// registered controls) with a Back button. Toggles/sliders render as click-to-change rows.
     /// </summary>
     internal sealed class NativeMenu
     {
-        private const float RowW = 640f, RowH = 78f, RowGap = 10f, TopPad = 64f;
+        private const float RowW = 620f, RowH = 76f, RowGap = 10f, TopPad = 70f;
 
         private readonly ManualLogSource _log;
         private readonly MenuManager _registry;
 
-        private GameObject _template;     // inactive clone of a game button
+        private GameObject _template;
         private GameObject _canvasGo;
-        private RectTransform _root;
+        private RectTransform _root;     // the panel; rows are its children
+        private RectTransform _panelRT;
+        private Image _panelImg;
         private bool _built;
-        private string _currentMod;       // null = root mod list; else a mod's settings page
+        private string _currentMod;
 
         public NativeMenu(ManualLogSource log, MenuManager registry)
         {
@@ -43,7 +46,7 @@ namespace ASL
             UnityEngine.Object.DontDestroyOnLoad(_template);
             _template.SetActive(false);
             _log.LogInfo("[menu] captured native button template.");
-            try { Build(); }   // build hidden now so any error surfaces immediately
+            try { Build(); }
             catch (Exception ex) { _log.LogError($"[menu] native build failed: {ex}"); }
         }
 
@@ -53,7 +56,7 @@ namespace ASL
             {
                 if (visible)
                 {
-                    _currentMod = null;                 // always open at the mod list
+                    _currentMod = null;
                     if (!_built) Build(); else Rebuild();
                     if (_canvasGo != null) _canvasGo.SetActive(true);
                 }
@@ -79,17 +82,27 @@ namespace ASL
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
             _canvasGo.AddComponent<GraphicRaycaster>();
-            _root = _canvasGo.GetComponent<RectTransform>();
 
+            // Full-screen dark backdrop that also blocks clicks to the game behind.
             var bg = new GameObject("Backdrop");
             bg.transform.SetParent(_canvasGo.transform, false);
             var bgImg = bg.AddComponent<Image>();
-            bgImg.color = new Color(0f, 0f, 0f, 0.82f);
+            bgImg.color = new Color(0f, 0f, 0f, 0.6f);
             var bgrt = bg.GetComponent<RectTransform>();
-            bgrt.anchorMin = Vector2.zero;
-            bgrt.anchorMax = Vector2.one;
-            bgrt.offsetMin = Vector2.zero;
-            bgrt.offsetMax = Vector2.zero;
+            bgrt.anchorMin = Vector2.zero; bgrt.anchorMax = Vector2.one;
+            bgrt.offsetMin = Vector2.zero; bgrt.offsetMax = Vector2.zero;
+
+            // Centred panel (borrows the Settings sprite). Rows live inside it.
+            var panel = new GameObject("Panel");
+            panel.transform.SetParent(_canvasGo.transform, false);
+            _panelImg = panel.AddComponent<Image>();
+            _panelRT = panel.GetComponent<RectTransform>();
+            _panelRT.anchorMin = new Vector2(0.5f, 0.5f);
+            _panelRT.anchorMax = new Vector2(0.5f, 0.5f);
+            _panelRT.pivot = new Vector2(0.5f, 0.5f);
+            _panelRT.sizeDelta = new Vector2(RowW + 60f, 600f);
+            _panelRT.anchoredPosition = Vector2.zero;
+            _root = _panelRT;
 
             EnsureEventSystem();
             Rebuild();
@@ -98,11 +111,28 @@ namespace ASL
             _log.LogInfo("[menu] native menu built.");
         }
 
+        private void ApplyPanelStyle()
+        {
+            if (_panelImg == null) return;
+            var sp = UiUtil.SettingsPanelSprite();
+            if (sp != null)
+            {
+                _panelImg.sprite = sp;
+                _panelImg.type = Image.Type.Sliced;
+                _panelImg.color = Color.white;
+            }
+            else
+            {
+                _panelImg.sprite = null;
+                _panelImg.color = new Color(0.04f, 0.04f, 0.05f, 0.97f);
+            }
+        }
+
         private void Rebuild()
         {
             if (_root == null) return;
 
-            for (int i = _root.childCount - 1; i >= 1; i--)   // keep backdrop at child 0
+            for (int i = _root.childCount - 1; i >= 0; i--)
                 UnityEngine.Object.Destroy(_root.GetChild(i).gameObject);
 
             int idx = 0;
@@ -118,55 +148,61 @@ namespace ASL
                 if (_registry.Sections.Count == 0)
                     AddRow("(no mods loaded)", false, null, idx++);
                 AddRow("Close", true, () => _registry.Visible = false, idx++);
-                return;
             }
-
-            AddRow(_currentMod, false, null, idx++);
-            AddRow("< Back", true, () => { _currentMod = null; Rebuild(); }, idx++);
-
-            MenuManager.Section section = null;
-            foreach (var s in _registry.Sections) if (s.ModName == _currentMod) { section = s; break; }
-
-            if (section != null)
+            else
             {
-                var controls = section.Controls;
-                for (int c = 0; c < controls.Count; c++)
+                AddRow(_currentMod, false, null, idx++);
+                AddRow("< Back", true, () => { _currentMod = null; Rebuild(); }, idx++);
+
+                MenuManager.Section section = null;
+                foreach (var s in _registry.Sections) if (s.ModName == _currentMod) { section = s; break; }
+
+                if (section != null)
                 {
-                    switch (controls[c])
+                    var controls = section.Controls;
+                    for (int c = 0; c < controls.Count; c++)
                     {
-                        case LabelControl lc:
-                            AddRow(lc.Label, false, null, idx++);
-                            break;
-                        case ButtonControl bc:
-                            AddRow(bc.Label, true, () => Safe(bc.OnClick), idx++);
-                            break;
-                        case ToggleControl tc:
+                        switch (controls[c])
                         {
-                            GameObject row = null;
-                            row = AddRow(ToggleText(tc), true, () =>
+                            case LabelControl lc:
+                                AddRow(lc.Label, false, null, idx++);
+                                break;
+                            case ButtonControl bc:
+                                AddRow(bc.Label, true, () => Safe(bc.OnClick), idx++);
+                                break;
+                            case ToggleControl tc:
                             {
-                                tc.Value = !tc.Value;
-                                Safe(() => tc.OnChanged?.Invoke(tc.Value));
-                                SetRowText(row, ToggleText(tc));
-                            }, idx++);
-                            break;
-                        }
-                        case SliderControl sc:
-                        {
-                            GameObject row = null;
-                            row = AddRow(SliderText(sc), true, () =>
+                                GameObject row = null;
+                                row = AddRow(ToggleText(tc), true, () =>
+                                {
+                                    tc.Value = !tc.Value;
+                                    Safe(() => tc.OnChanged?.Invoke(tc.Value));
+                                    SetRowText(row, ToggleText(tc));
+                                }, idx++);
+                                break;
+                            }
+                            case SliderControl sc:
                             {
-                                Step(sc);
-                                Safe(() => sc.OnChanged?.Invoke(sc.Value));
-                                SetRowText(row, SliderText(sc));
-                            }, idx++);
-                            break;
+                                GameObject row = null;
+                                row = AddRow(SliderText(sc), true, () =>
+                                {
+                                    Step(sc);
+                                    Safe(() => sc.OnChanged?.Invoke(sc.Value));
+                                    SetRowText(row, SliderText(sc));
+                                }, idx++);
+                                break;
+                            }
                         }
                     }
                 }
+
+                AddRow("Close", true, () => _registry.Visible = false, idx++);
             }
 
-            AddRow("Close", true, () => _registry.Visible = false, idx++);
+            // Size the panel to wrap the rows, and (re)apply the settings-style background.
+            if (_panelRT != null)
+                _panelRT.sizeDelta = new Vector2(RowW + 60f, TopPad + idx * (RowH + RowGap) + 30f);
+            ApplyPanelStyle();
         }
 
         private GameObject AddRow(string text, bool interactable, Action onClick, int index)

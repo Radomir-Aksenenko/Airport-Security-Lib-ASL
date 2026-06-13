@@ -97,6 +97,8 @@ namespace ASL
 
             // Try to add the "Mods" button to the main menu (bounded retries after scene changes).
             MainMenuInjector.Tick();
+            // Re-localize the Mods button if the player switched language.
+            MainMenuInjector.PollLanguage();
         }
     }
 }
