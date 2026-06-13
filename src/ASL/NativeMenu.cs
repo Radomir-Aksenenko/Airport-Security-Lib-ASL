@@ -97,11 +97,10 @@ namespace ASL
             panel.transform.SetParent(_canvasGo.transform, false);
             _panelImg = panel.AddComponent<Image>();
             _panelRT = panel.GetComponent<RectTransform>();
-            _panelRT.anchorMin = new Vector2(0.5f, 0.5f);
-            _panelRT.anchorMax = new Vector2(0.5f, 0.5f);
-            _panelRT.pivot = new Vector2(0.5f, 0.5f);
-            _panelRT.sizeDelta = new Vector2(RowW + 60f, 600f);
-            _panelRT.anchoredPosition = Vector2.zero;
+            _panelRT.anchorMin = Vector2.zero;       // full-screen background, like the Settings screen
+            _panelRT.anchorMax = Vector2.one;
+            _panelRT.offsetMin = Vector2.zero;
+            _panelRT.offsetMax = Vector2.zero;
             _root = _panelRT;
 
             EnsureEventSystem();
@@ -199,9 +198,7 @@ namespace ASL
                 AddRow("Close", true, () => _registry.Visible = false, idx++);
             }
 
-            // Size the panel to wrap the rows, and (re)apply the settings-style background.
-            if (_panelRT != null)
-                _panelRT.sizeDelta = new Vector2(RowW + 60f, TopPad + idx * (RowH + RowGap) + 30f);
+            // (Re)apply the settings-style background; the panel fills the whole screen.
             ApplyPanelStyle();
         }
 
