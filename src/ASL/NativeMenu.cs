@@ -11,8 +11,10 @@ namespace ASL
     /// <summary>
     /// Renders the mod menu natively (uGUI), in the game's own style — no IMGUI. Each row is a clone
     /// of a real game menu button (captured by <see cref="MainMenuInjector"/>), so rows inherit the
-    /// game's LED-panel look, font, and hover animation. Toggles and sliders are rendered as
-    /// click-to-change buttons. Reads its content from <see cref="MenuManager"/>.
+    /// game's LED-panel look, font, and hover animation.
+    ///
+    /// Two pages: the root lists one button per mod; clicking a mod opens that mod's settings page
+    /// (its registered controls) with a Back button. Toggles/sliders render as click-to-change rows.
     /// </summary>
     internal sealed class NativeMenu
     {
@@ -25,6 +27,7 @@ namespace ASL
         private GameObject _canvasGo;
         private RectTransform _root;
         private bool _built;
+        private string _currentMod;       // null = root mod list; else a mod's settings page
 
         public NativeMenu(ManualLogSource log, MenuManager registry)
         {
@@ -50,6 +53,7 @@ namespace ASL
             {
                 if (visible)
                 {
+                    _currentMod = null;                 // always open at the mod list
                     if (!_built) Build(); else Rebuild();
                     if (_canvasGo != null) _canvasGo.SetActive(true);
                 }
@@ -77,7 +81,6 @@ namespace ASL
             _canvasGo.AddComponent<GraphicRaycaster>();
             _root = _canvasGo.GetComponent<RectTransform>();
 
-            // Dark backdrop that also blocks clicks to the game behind.
             var bg = new GameObject("Backdrop");
             bg.transform.SetParent(_canvasGo.transform, false);
             var bgImg = bg.AddComponent<Image>();
@@ -99,50 +102,64 @@ namespace ASL
         {
             if (_root == null) return;
 
-            // Clear previous rows (keep the backdrop at child 0).
-            for (int i = _root.childCount - 1; i >= 1; i--)
+            for (int i = _root.childCount - 1; i >= 1; i--)   // keep backdrop at child 0
                 UnityEngine.Object.Destroy(_root.GetChild(i).gameObject);
 
             int idx = 0;
-            AddRow("— ASL  Mods —", false, null, idx++);
 
-            foreach (var sec in _registry.Sections)
+            if (_currentMod == null)
             {
-                AddRow(sec.ModName, false, null, idx++);
-                var controls = sec.Controls;
+                AddRow("— Mods —", false, null, idx++);
+                foreach (var sec in _registry.Sections)
+                {
+                    var modName = sec.ModName;
+                    AddRow(modName, true, () => { _currentMod = modName; Rebuild(); }, idx++);
+                }
+                if (_registry.Sections.Count == 0)
+                    AddRow("(no mods loaded)", false, null, idx++);
+                AddRow("Close", true, () => _registry.Visible = false, idx++);
+                return;
+            }
+
+            AddRow(_currentMod, false, null, idx++);
+            AddRow("< Back", true, () => { _currentMod = null; Rebuild(); }, idx++);
+
+            MenuManager.Section section = null;
+            foreach (var s in _registry.Sections) if (s.ModName == _currentMod) { section = s; break; }
+
+            if (section != null)
+            {
+                var controls = section.Controls;
                 for (int c = 0; c < controls.Count; c++)
                 {
-                    var ctrl = controls[c];
-                    switch (ctrl)
+                    switch (controls[c])
                     {
                         case LabelControl lc:
-                            AddRow("  " + lc.Label, false, null, idx++);
+                            AddRow(lc.Label, false, null, idx++);
                             break;
                         case ButtonControl bc:
                             AddRow(bc.Label, true, () => Safe(bc.OnClick), idx++);
                             break;
                         case ToggleControl tc:
                         {
-                            int rowIndex = idx++;
                             GameObject row = null;
                             row = AddRow(ToggleText(tc), true, () =>
                             {
                                 tc.Value = !tc.Value;
                                 Safe(() => tc.OnChanged?.Invoke(tc.Value));
                                 SetRowText(row, ToggleText(tc));
-                            }, rowIndex);
+                            }, idx++);
                             break;
                         }
                         case SliderControl sc:
                         {
-                            int rowIndex = idx++;
                             GameObject row = null;
                             row = AddRow(SliderText(sc), true, () =>
                             {
                                 Step(sc);
                                 Safe(() => sc.OnChanged?.Invoke(sc.Value));
                                 SetRowText(row, SliderText(sc));
-                            }, rowIndex);
+                            }, idx++);
                             break;
                         }
                     }
@@ -166,8 +183,7 @@ namespace ASL
             rt.sizeDelta = new Vector2(RowW, RowH);
             rt.anchoredPosition = new Vector2(0f, -(TopPad + index * (RowH + RowGap)));
 
-            var tmp = go.GetComponentInChildren<TMP_Text>(true);
-            if (tmp != null) tmp.text = text;
+            UiUtil.SetLabel(go, text);
 
             var icon = rt.Find("IconHolder");
             if (icon != null) icon.gameObject.SetActive(false);
@@ -186,12 +202,7 @@ namespace ASL
             return go;
         }
 
-        private void SetRowText(GameObject row, string text)
-        {
-            if (row == null) return;
-            var tmp = row.GetComponentInChildren<TMP_Text>(true);
-            if (tmp != null) tmp.text = text;
-        }
+        private void SetRowText(GameObject row, string text) => UiUtil.SetLabel(row, text);
 
         private static string ToggleText(ToggleControl t) => $"{t.Label}: {(t.Value ? "ON" : "OFF")}";
         private static string SliderText(SliderControl s) => $"{s.Label}: {s.Value:0.##}";

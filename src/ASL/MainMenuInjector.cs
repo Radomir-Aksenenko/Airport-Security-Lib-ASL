@@ -69,8 +69,7 @@ namespace ASL
             var clone = UnityEngine.Object.Instantiate(settingsBtn.gameObject, settingsBtn.transform.parent);
             clone.name = CloneName;
 
-            var cloneLabel = clone.GetComponentInChildren<TMP_Text>(true);
-            if (cloneLabel != null) cloneLabel.text = "Mods";
+            UiUtil.SetLabel(clone, "Mods");   // strips the localizer so it stays "Mods", not "Settings"
 
             var btn = clone.GetComponent<Button>();
             var click = btn.onClick;
