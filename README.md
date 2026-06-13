@@ -57,6 +57,24 @@ public sealed class MyMod : AslMod
 …or skip the build entirely and drop the same code as `Main.cs` in a **script mod**. See
 [Mod types](docs/mod-types.md).
 
+## What you can build right now
+
+With today's API you can already make, for example:
+
+- **Reskins / retextures** — a no-code content mod that swaps game textures for your own PNGs
+  (UI icons, materials, …): just a folder with `manifest.json` + images.
+- **Per-frame behaviour** — subscribe to `Events.Update` to read or tweak game state every frame
+  (the workhorse: drive logic, automate actions, build overlays).
+- **React to the game's flow** — `Events.SceneChanged` (entered a level/menu) and
+  `Events.LocalPlayerChanged` (your player spawned/despawned) let a mod kick in at the right moment.
+- **React to specific game actions** — `Hooks.TryPostfix(type, "Method", …)` runs your code after a
+  chosen game method, so you can respond to game logic without writing Harmony yourself.
+- **Throwaway experiments** — drop a `.cs` script into `mods/` and iterate with no build setup.
+- **Quality-of-life & debug tools** — logging, on-screen info, value tweaks and automation built on
+  the events above.
+
+Every mod is isolated: a broken one is logged and skipped, not crashed into the game.
+
 ## Building ASL
 
 Requires the **.NET SDK** (6.0+, tested on 10.x) and a local install of the game with BepInEx 6
@@ -89,6 +107,25 @@ samples/ExampleContentMod/   content mod example
 docs/                        documentation
 ```
 
+## Roadmap
+
+Rough order of what's next:
+
+- **Multiplayer (Mirror) sync** — keep custom content/state consistent across clients.
+- **Richer content** — atlas sub-sprites and non-main shader slots for texture swaps; more content
+  types (audio, prefab/value tweaks) driven from the manifest.
+- **More built-in game events** — NPC spawned, round start/end, contraband scans — surfaced through
+  the event bus (built on the opt-in hook system).
+- **In-game mod menu** — a shared config/UI surface mods can register into.
+- **Stable 1.0 API** — freeze `ASL.API`, ship a reference/NuGet package for mod authors, adopt semver.
+- **Distribution** — a Thunderstore package so players install ASL and mods in one click.
+
 ## License
 
-Not yet chosen. Add one before any public release.
+**MIT** — see [LICENSE](LICENSE). Use, modify, fork, and redistribute ASL freely (including in
+closed-source mods); just keep the copyright notice. MIT is the de-facto standard for BepInEx mod
+libraries, so other modders can depend on ASL without legal friction.
+
+ASL is an unofficial, fan-made modding library and is **not affiliated with the developers of
+Airport Security Sucks!**. The MIT license covers ASL's own source only — not the game or its
+assets, which remain under their own terms.
