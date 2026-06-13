@@ -43,14 +43,15 @@ Swaps are applied (and re-applied) on every scene change, since textures stream 
 build and can't be called from managed code, so ASL decodes the PNG itself (a small managed decoder)
 into RGBA32 and writes it the marshal-safe way:
 - **Readable** target texture → written in place; every material/sprite using it updates at once.
-- **Non-readable** target (most game textures) → ASL builds a replacement texture and reassigns
-  `Material.mainTexture` references that pointed at the target.
+- **Non-readable** target (most game textures) → ASL builds a replacement texture and repoints
+  references that used the target: `Material.mainTexture`, UI `Image.sprite` (rebuilt via
+  `Sprite.Create`), and `RawImage.texture`.
 
 > **Caveats.** The decoder handles 8-bit, non-interlaced PNGs (color types grayscale / RGB / palette /
-> gray+alpha / RGBA). The reassignment path covers a material's **main texture**; textures bound to
-> other shader slots, or used only through UI `Image` sprite atlases, aren't reassigned yet. Use
-> `"listTextureNames": true` to discover valid `target` names (the log also shows each texture's
-> `readable` flag).
+> gray+alpha / RGBA). Not covered for non-readable targets: textures bound to **non-main shader
+> slots**, and **atlas sub-sprites** (an `Image` showing one region of a packed atlas — the rebuilt
+> sprite uses the whole replacement, centred pivot). Use `"listTextureNames": true` to discover valid
+> `target` names (the log also shows each texture's `readable` flag).
 
 ---
 

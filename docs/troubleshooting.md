@@ -46,15 +46,15 @@ Texture swaps work via a marshal-safe path (Unity 6 / IL2CPP can't call the span
 How it resolves each target:
 - **Readable** target texture → written in place (`Reinitialize` + `LoadRawTextureData` + `Apply`);
   all holders update.
-- **Non-readable** target (most game textures) → ASL builds a replacement texture and reassigns
-  `Material.mainTexture` references to it.
+- **Non-readable** target (most game textures) → ASL builds a replacement texture and repoints
+  `Material.mainTexture`, UI `Image.sprite`, and `RawImage.texture` references to it.
 
 If a swap reports nothing applied:
 - The `target` name may be wrong — enable `"listTextureNames": true` and read the log (it shows each
   texture's `readable` flag too).
 - The texture may load only in a later scene — swaps re-apply on every scene change.
-- The texture may be used only via a UI `Image` sprite/atlas, or bound to a non-main shader slot —
-  those aren't reassigned yet (see caveats in [mod-types](mod-types.md#content-mods)).
+- The texture may be an **atlas sub-sprite** or bound to a **non-main shader slot** — those aren't
+  reassigned yet (see caveats in [mod-types](mod-types.md#content-mods)).
 
 PNG support: 8-bit depth, non-interlaced, color types grayscale / RGB / palette / gray+alpha / RGBA.
 Other PNGs log a decode error and are skipped.

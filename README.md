@@ -33,7 +33,7 @@ Airport Security Sucks/
 | `mods/` folder loader | ✅ | Each mod = a folder with `manifest.json`; per-mod isolation & logging |
 | **DLL mods** (`type: dll`) | ✅ | Subclass `AslMod`, ship a `.dll` |
 | **Script mods** (`type: script`) | ✅ | Plain `.cs`, compiled at runtime with Roslyn — no build setup |
-| **Content mods** (`type: content`) | ✅ | Texture swaps: managed PNG decode → in-place write (readable textures) or `Material.mainTexture` reassignment (non-readable) + texture-name discovery |
+| **Content mods** (`type: content`) | ✅ | Texture swaps: managed PNG decode → in-place write (readable) or reassign `Material.mainTexture` / UI `Image.sprite` / `RawImage.texture` (non-readable) + texture-name discovery |
 | Event bus | ✅ | `Update`, `SceneChanged`, `LocalPlayerChanged` |
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
 
