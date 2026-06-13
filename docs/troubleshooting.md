@@ -33,19 +33,31 @@ ASL logs them with IDs and line numbers:
 Fix the source and relaunch. Remember scripts can `using ASL.Api;` and game namespaces
 (`Metater`, `UnityEngine`, `Mirror`, …) — the compiler references all interop assemblies.
 
-## Texture swaps don't apply
+## Texture swaps
 
-You'll see:
+Texture swaps work via a marshal-safe path (Unity 6 / IL2CPP can't call the span-based
+`ImageConversion.LoadImage`, so ASL decodes the PNG itself and writes the pixels directly):
+
 ```
-[content] swap 'X' (from '…') disabled: texture write unavailable on this build
-    (Method not found: '!0 ByRef Il2CppSystem.ReadOnlySpan`1.GetPinnableReference()').
+[content] 'star_gray': applied to 1 target(s)/material(s).
+[content] applied 1 texture write(s)/reassignment(s).
 ```
-On this game's Unity 6 build, `ImageConversion.LoadImage` is span-based and Il2CppInterop can't
-marshal it (the underlying `ReadOnlySpan.GetPinnableReference` isn't present). ASL reports the swap
-once and disables it so it doesn't retry every scene. **The discovery half still works** —
-`"listTextureNames": true` dumps loaded texture names so you can author correct `target` values,
-and the pipeline is ready for builds/areas where the write succeeds. (A future ASL version may add
-a marshal-safe texture path.)
+
+How it resolves each target:
+- **Readable** target texture → written in place (`Reinitialize` + `LoadRawTextureData` + `Apply`);
+  all holders update.
+- **Non-readable** target (most game textures) → ASL builds a replacement texture and reassigns
+  `Material.mainTexture` references to it.
+
+If a swap reports nothing applied:
+- The `target` name may be wrong — enable `"listTextureNames": true` and read the log (it shows each
+  texture's `readable` flag too).
+- The texture may load only in a later scene — swaps re-apply on every scene change.
+- The texture may be used only via a UI `Image` sprite/atlas, or bound to a non-main shader slot —
+  those aren't reassigned yet (see caveats in [mod-types](mod-types.md#content-mods)).
+
+PNG support: 8-bit depth, non-interlaced, color types grayscale / RGB / palette / gray+alpha / RGBA.
+Other PNGs log a decode error and are skipped.
 
 ## Harmony hooks: "Parameter X not found" / "IL Compile Error"
 

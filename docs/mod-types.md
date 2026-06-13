@@ -39,12 +39,18 @@ mods/RetextureStars/
 
 Swaps are applied (and re-applied) on every scene change, since textures stream in as levels load.
 
-> ⚠️ **Build limitation.** Writing pixels into a texture uses Unity's `ImageConversion.LoadImage`,
-> which on this game's Unity 6 / IL2CPP build is span-based and not marshalable from managed code.
-> When that's the case, ASL reports the swap once and disables it (no spam), while the rest of the
-> content pipeline — including `listTextureNames` discovery — keeps working. See
-> [troubleshooting](troubleshooting.md#texture-swaps-dont-apply). The schema and pipeline are ready
-> for builds/areas where the write succeeds.
+**How the swap works.** Unity's `ImageConversion.LoadImage` is span-based on this Unity 6 / IL2CPP
+build and can't be called from managed code, so ASL decodes the PNG itself (a small managed decoder)
+into RGBA32 and writes it the marshal-safe way:
+- **Readable** target texture → written in place; every material/sprite using it updates at once.
+- **Non-readable** target (most game textures) → ASL builds a replacement texture and reassigns
+  `Material.mainTexture` references that pointed at the target.
+
+> **Caveats.** The decoder handles 8-bit, non-interlaced PNGs (color types grayscale / RGB / palette /
+> gray+alpha / RGBA). The reassignment path covers a material's **main texture**; textures bound to
+> other shader slots, or used only through UI `Image` sprite atlases, aren't reassigned yet. Use
+> `"listTextureNames": true` to discover valid `target` names (the log also shows each texture's
+> `readable` flag).
 
 ---
 
