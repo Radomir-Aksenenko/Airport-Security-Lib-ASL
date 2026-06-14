@@ -24,7 +24,7 @@ Airport Security Sucks/
 - [manifest.json reference](docs/manifest.md)
 - [API reference](docs/api-reference.md) — `IModContext`, events, hooks
 - [Building ASL from source](docs/building.md)
-- [Networking (Mirror)](docs/networking.md) — `IAslNet`, and the message-transport plan
+- [Networking (Mirror)](docs/networking.md) — `IAslNet` awareness + the message transport (`Send`/`Subscribe`)
 - [Troubleshooting & IL2CPP notes](docs/troubleshooting.md)
 
 ## What works today
@@ -38,7 +38,10 @@ Airport Security Sucks/
 | Event bus | ✅ | `Update`, `SceneChanged`, `LocalPlayerChanged` |
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
 | In-game menu | ✅ | `IModMenu` — toggles / buttons / sliders in a shared overlay; opened with **F8** or the **Mods** button ASL adds to the main menu |
-| Networking awareness | ✅ | `IAslNet` — host/client/connected state + connection-count changes (Mirror). Message transport is planned, see [docs/networking.md](docs/networking.md) |
+| Networking awareness | ✅ | `IAslNet` — host/client/connected state + connection-count changes (Mirror) |
+| Networking **player identity** | ✅ | `IAslNet.Players`/`LocalPlayer`/`GetPlayer(connId)` + `PlayerJoined`/`PlayerLeft` — each `IAslPlayer` pairs the game `MetaPlayer` with its Mirror identity (netId, conn id, isLocal) and a name (local from Steam); verified in-game |
+| Networking **synced state** | 🧪 | `IAslNet.GetSync(id)` → `IAslSync` — host-authoritative shared key/value store (host `Set`, all read, late joiners get a snapshot, `Changed` event). Local get/set/`Changed` verified in-game; host→client replication rides the transport (pending the 2-peer send confirmation) |
+| Networking **message transport** | 🧪 | `IAslNet.Send`/`Subscribe` (bytes) **and typed `Send<T>`/`Subscribe<T>`** (`IAslMessage` + `AslWriter`/`AslReader` — send objects, not bytes) host↔client on named channels, tunnelled through a Mirror message the game already ships. **Receive confirmed in-game both server- and client-side** (incl. a real remote host); send rebuilt onto the active transport and safe, **only send-delivery to a 2nd ASL peer still pending**, see [docs/networking.md](docs/networking.md) |
 
 ## The 30-second mod
 
@@ -72,6 +75,9 @@ With today's API you can already make, for example:
   `Events.LocalPlayerChanged` (your player spawned/despawned) let a mod kick in at the right moment.
 - **React to specific game actions** — `Hooks.TryPostfix(type, "Method", …)` runs your code after a
   chosen game method, so you can respond to game logic without writing Harmony yourself.
+- **Multiplayer mods** — `ctx.Net` tells you host/client/connection state, and the message
+  transport (`Net.Send` / `Net.Subscribe`) lets a mod send bytes host↔client on named channels for
+  custom sync (🧪 experimental — see [networking](docs/networking.md)).
 - **Throwaway experiments** — drop a `.cs` script into `mods/` and iterate with no build setup.
 - **Quality-of-life & debug tools** — logging, on-screen info, value tweaks and automation built on
   the events above.
@@ -114,9 +120,10 @@ docs/                        documentation
 
 Rough order of what's next:
 
-- **Multiplayer (Mirror) message transport** — awareness (host/client/connections) ships now;
-  sending custom data between clients is next, and needs a two-client test (see
-  [docs/networking.md](docs/networking.md)).
+- **Multiplayer (Mirror) message transport** — implemented (`IAslNet.Send`/`Subscribe`, host↔client
+  bytes on named channels); now needs a two-client in-game confirmation to graduate from 🧪 to ✅
+  (see [docs/networking.md](docs/networking.md)). After that: an unreliable/unordered channel option
+  and a higher-level typed/RPC helper on top.
 - **Richer content** — atlas sub-sprites and non-main shader slots for texture swaps; more content
   types (audio, prefab/value tweaks) driven from the manifest.
 - **More built-in game events** — NPC spawned, round start/end, contraband scans — surfaced through

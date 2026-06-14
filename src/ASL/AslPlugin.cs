@@ -56,7 +56,7 @@ namespace ASL
             Content = new ContentRegistry(Logger, Bus);
             Menu = new MenuManager();
             Ui = new NativeMenu(Logger, Menu);
-            Net = new NetState(Logger);
+            Net = new NetState(Logger, Harmony);
 
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");
 

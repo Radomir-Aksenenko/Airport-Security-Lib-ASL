@@ -33,7 +33,7 @@ public interface IModContext
     IAslEvents  Events       { get; }  // game events
     IModHooks   Hooks        { get; }  // opt-in Harmony hooks
     IModMenu    Menu         { get; }  // in-game menu (F8)
-    IAslNet     Net          { get; }  // networking awareness
+    IAslNet     Net          { get; }  // networking: awareness + message transport
 }
 ```
 
@@ -135,11 +135,13 @@ ctx.Menu.AddSlider("Speed", 1f, 10f, 5f, v => _speed = v);
 
 ## Networking
 
-`ctx.Net` (`IAslNet`). Read-only networking awareness (the game uses Mirror).
+`ctx.Net` (`IAslNet`). The game uses Mirror; ASL exposes two layers — read-only **awareness** and a
+**message transport** for sending bytes between the host and clients.
 
 ```csharp
 public interface IAslNet
 {
+    // --- awareness (always safe, pure Mirror reads) ---
     bool IsOnline { get; }            // server and/or client active
     bool IsServer { get; }            // we run the server (host or dedicated)
     bool IsClient { get; }            // we run a client (incl. host's local client)
@@ -147,12 +149,151 @@ public interface IAslNet
     bool IsConnectedClient { get; }   // our client is connected
     int  ConnectionCount { get; }     // server-side connected clients
     event Action<int> ConnectionsChanged;   // server-side, fires with the new count
+
+    // --- message transport ---
+    bool MessagingAvailable { get; }  // transport could be installed (lazy; reading it sets up)
+    bool Send(string channel, byte[] data);                 // auto-route: client→server, host→all
+    bool SendToServer(string channel, byte[] data);         // client → server
+    bool SendToAll(string channel, byte[] data);            // server → all clients
+    bool SendToClient(int connectionId, string channel, byte[] data);  // server → one client
+    void Subscribe(string channel, Action<AslNetMessage> handler);
+    void Unsubscribe(string channel, Action<AslNetMessage> handler);
+
+    // --- typed messages (serialize objects, not bytes) ---
+    bool Send<T>(string channel, T message) where T : IAslMessage;                   // auto-route
+    bool SendToServer<T>(string channel, T message) where T : IAslMessage;
+    bool SendToAll<T>(string channel, T message) where T : IAslMessage;
+    bool SendToClient<T>(int connectionId, string channel, T message) where T : IAslMessage;
+    void Subscribe<T>(string channel, Action<T, AslNetMessage> handler) where T : IAslMessage, new();
+    void Unsubscribe<T>(string channel, Action<T, AslNetMessage> handler) where T : IAslMessage, new();
+
+    // --- player identity ---
+    IReadOnlyList<IAslPlayer> Players { get; }   // everyone in the session
+    IAslPlayer LocalPlayer { get; }              // you (or null)
+    IAslPlayer GetPlayer(int connectionId);      // map a message sender to a player (server-side)
+    event Action<IAslPlayer> PlayerJoined;
+    event Action<IAslPlayer> PlayerLeft;
+
+    // --- synced state ---
+    IAslSync GetSync(string id);                  // host-authoritative shared key/value store
 }
 ```
 
-This is awareness only — ASL does **not yet** provide a custom-message transport (sending data
-between clients). See [networking.md](networking.md) for the IL2CPP/Mirror constraint behind that
-and the planned approach.
+Received messages arrive as `AslNetMessage`:
+
+```csharp
+public sealed class AslNetMessage
+{
+    string Channel { get; }              // the channel it arrived on
+    byte[] Data    { get; }              // the bytes the sender passed (never null)
+    int  SenderConnectionId { get; }     // server-side: which client (>=0); client-side: -1
+    bool FromServer { get; }             // received on a client (SenderConnectionId < 0)
+    bool FromClient { get; }             // received on the server (SenderConnectionId >= 0)
+}
+```
+
+**How it works (and why it's safe):** new mod-defined Mirror message types can't be sent on this
+IL2CPP build (their serializer code is never AOT-compiled). Instead ASL tunnels your bytes through
+a Mirror message the game already ships, tagged so it can never be confused with real game traffic,
+and intercepts it on arrival to hand back to you. You never touch Mirror. Full detail and the
+verification status are in [networking.md](networking.md).
+
+Example — a host counts pings from clients and replies:
+
+```csharp
+public override void OnLoad(IModContext ctx)
+{
+    const string Ch = "com.author.mymod/ping";
+
+    ctx.Net.Subscribe(Ch, msg =>
+    {
+        if (msg.FromClient)                                   // we're the server
+        {
+            ctx.Log.Info($"ping from client {msg.SenderConnectionId}");
+            ctx.Net.SendToClient(msg.SenderConnectionId, Ch, new byte[] { 1 });  // pong
+        }
+        else                                                 // we're a client; got the pong
+            ctx.Log.Info("pong from host");
+    });
+
+    // From a client, ping the host (e.g. on a menu button):
+    ctx.Menu.AddButton("Ping host", () => ctx.Net.SendToServer(Ch, new byte[] { 0 }));
+}
+```
+
+Guidance:
+- **Gate on `MessagingAvailable`** (or check the `Send*` return value) — the transport installs
+  lazily and could be unavailable on an unexpected build.
+- **Both peers must run a mod** that subscribes to the **same channel string**. Namespace your
+  channel with your mod id (e.g. `"com.author.mymod/state"`) so mods don't clash.
+- **Keep messages small** and infrequent; they ride Mirror's reliable channel.
+- Handlers run on the **main thread** — safe to touch game state, but keep them fast.
+
+### Typed messages
+
+Instead of packing `byte[]` by hand, define an `IAslMessage` and use the typed `Send<T>` /
+`Subscribe<T>` overloads — ASL serializes for you.
+
+```csharp
+public interface IAslMessage
+{
+    void Write(AslWriter writer);   // write your fields
+    void Read(AslReader reader);    // read them back in the same order
+}
+
+public sealed class ScoreUpdate : IAslMessage
+{
+    public int PlayerId; public int Score; public string Name;
+    public void Write(AslWriter w) { w.WriteInt(PlayerId); w.WriteInt(Score); w.WriteString(Name); }
+    public void Read(AslReader r)  { PlayerId = r.ReadInt(); Score = r.ReadInt(); Name = r.ReadString(); }
+}
+
+ctx.Net.Subscribe<ScoreUpdate>("com.author.mymod/score", (msg, raw) =>
+    ctx.Log.Info($"{msg.Name}={msg.Score} from conn {raw.SenderConnectionId}"));
+ctx.Net.SendToAll("com.author.mymod/score", new ScoreUpdate { Name = "Radomir", Score = 42 });
+```
+
+`AslWriter` / `AslReader` cover `bool`/`byte`/`sbyte`/`short`/`ushort`/`int`/`uint`/`long`/`ulong`/
+`float`/`double`, length-prefixed `string` (UTF-8), and raw `byte[]` blobs. The typed handler receives
+both your `T` and the raw `AslNetMessage` (for `SenderConnectionId` etc.). A short/garbled payload is
+logged and skipped, never thrown at your mod. See [networking.md](networking.md) for more.
+
+### Player identity
+
+`ctx.Net` lists the session's players as `IAslPlayer` (the game `MetaPlayer` object + Mirror identity):
+
+```csharp
+public interface IAslPlayer
+{
+    MetaPlayer Player { get; }   // the game player object
+    uint   NetId        { get; } // Mirror net id (same on every peer)
+    int    ConnectionId { get; } // server-side id (== AslNetMessage.SenderConnectionId), else -1
+    bool   IsLocal      { get; } // this is you
+    string Name         { get; } // local: from Steam; remote: empty for now (best-effort)
+}
+
+ctx.Net.PlayerJoined += p => ctx.Log.Info($"{p.Name} joined (netId {p.NetId})");
+var sender = ctx.Net.GetPlayer(raw.SenderConnectionId);   // server: who sent a message
+foreach (var p in ctx.Net.Players) { /* roster */ }
+```
+
+`Players` / `PlayerJoined` / `PlayerLeft` are poll-driven on the **main thread**. `NetId`,
+`ConnectionId`, `IsLocal`, and `Player` are always reliable; `Name` is best-effort (see
+[networking.md](networking.md)).
+
+### Synced state
+
+`ctx.Net.GetSync(id)` returns a host-authoritative shared key/value store (`IAslSync`):
+
+```csharp
+var state = ctx.Net.GetSync("com.author.mymod/state");
+state.Changed += (key, value) => { /* host on Set, client on receive */ };
+if (ctx.Net.IsServer) state.Set("round", "warmup");   // Set is host-only
+string round = state.Get("round");                    // anyone reads; also TryGet/Contains/All
+```
+
+The host sets values; they replicate to clients and late joiners get a full snapshot. Values are
+strings. See [networking.md](networking.md) for details and the send caveat.
 
 ## `AslInfo` (advanced)
 

@@ -39,8 +39,9 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Deploy the built mod (dll + manifest) into the game's mods/ folder for testing. -->
-  <Target Name="DeploySampleMod" AfterTargets="Build">
+  <!-- Deploy the built mod (dll + manifest) into the game's mods/ folder for testing.
+       Skipped with /p:DeployToGame=false (e.g. to compile-check while the game is running). -->
+  <Target Name="DeploySampleMod" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
     <PropertyGroup>
       <ModOut>$(GamePath)\mods\HelloMod</ModOut>
     </PropertyGroup>
