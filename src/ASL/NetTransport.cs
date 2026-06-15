@@ -200,18 +200,51 @@ namespace ASL
         // message = [ushort EntityStateMessage-id][uint netId][CompressVarUInt(payload.Count+1)][payload].
         private Il2CppSystem.ArraySegment<byte> BuildBatch(byte[] payload)
         {
-            // message = [ushort id][uint netId][CompressVarUInt(payload.Count+1)][payload bytes]
+            // EntityStateMessage on the wire is [CompressVarUInt netId][CompressVarUInt(count+1)][bytes]
+            // — netId is var-compressed, NOT a fixed uint (the game's _Read reads it that way). The
+            // message is prefixed with its 2-byte id; the whole thing is length-prefixed inside the batch.
+            int netIdSize = (int)Compression.VarUIntSize(SentinelNetId);
             int sizePrefix = (int)Compression.VarUIntSize((ulong)(payload.Length + 1));
-            int msgLen = 2 + 4 + sizePrefix + payload.Length;
+            int msgLen = 2 + netIdSize + sizePrefix + payload.Length;
 
             var wb = new NetworkWriter();
             NetworkWriterExtensions.WriteDouble(wb, NetworkTime.localTime);   // batch timestamp header
             Compression.CompressVarUInt(wb, (ulong)msgLen);                   // per-message length prefix
-            NetworkWriterExtensions.WriteUShort(wb, _entityStateId);
-            NetworkWriterExtensions.WriteUInt(wb, SentinelNetId);
+            NetworkWriterExtensions.WriteUShort(wb, _entityStateId);          // message id
+            Compression.CompressVarUInt(wb, SentinelNetId);                   // netId (var-compressed)
             var nativePayload = new Il2CppStructArray<byte>(payload);
             NetworkWriterExtensions.WriteBytesAndSize(wb, nativePayload, 0, payload.Length);
             return wb.ToArraySegment();
+        }
+
+        // Build one of our batches and parse it straight back through Mirror's own reader exactly as the
+        // game does on receive (skip timestamp + length + message id, then DecompressVarUInt netId,
+        // ReadBytesAndSize payload). If this round-trips, the wire format is correct — provable solo.
+        private void RunWireSelfCheck()
+        {
+            try
+            {
+                byte[] testPayload = Encode("asl/wirecheck", new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x42 });
+                var batch = BuildBatch(testPayload);
+
+                var reader = new NetworkReader(batch);
+                NetworkReaderExtensions.ReadDouble(reader);                 // batch timestamp
+                ulong msgLen = Compression.DecompressVarUInt(reader);       // per-message length
+                ushort id = NetworkReaderExtensions.ReadUShort(reader);     // message id
+                ulong netId = Compression.DecompressVarUInt(reader);        // EntityStateMessage.netId
+                var payloadSeg = NetworkReaderExtensions.ReadBytesAndSize(reader);
+
+                bool netOk = (uint)netId == SentinelNetId;
+                bool payloadOk = payloadSeg != null && payloadSeg.Length == testPayload.Length;
+                if (payloadOk)
+                    for (int i = 0; i < testPayload.Length; i++) if (payloadSeg[i] != testPayload[i]) { payloadOk = false; break; }
+
+                if (netOk && payloadOk)
+                    _log.LogInfo($"NET WIRE SELF-CHECK: PASS — batch parses with Mirror's reader (netId=0x{(uint)netId:X8}, msgLen={msgLen}, id=0x{id:X4}).");
+                else
+                    _log.LogError($"NET WIRE SELF-CHECK: FAIL — netId=0x{(uint)netId:X8} (expect 0x{SentinelNetId:X8}), payload {(payloadOk ? "ok" : "MISMATCH")}.");
+            }
+            catch (Exception ex) { _log.LogError($"NET WIRE SELF-CHECK: FAIL — {ex.Message}"); }
         }
 
         // The message id Mirror assigns to EntityStateMessage, read from its own registry at runtime
@@ -379,6 +412,7 @@ namespace ASL
                 }
 
                 _installed = true;
+                RunWireSelfCheck();   // confirm our batch parses with Mirror's own reader (no peer needed)
                 _log.LogInfo("Net transport installed (EntityStateMessage envelope) — mods can Send/Subscribe.");
             }
             catch (Exception ex)
