@@ -23,13 +23,8 @@ namespace PropHunt
         private IAslSync _state;
         private int _frame;
         private bool _testDisguised;
-        private int _selfTestState, _selfTestFrames;   // one-shot disguise validation
 
-        private sealed class Disguise
-        {
-            public GameObject Box;
-            public readonly List<Renderer> Hidden = new List<Renderer>();
-        }
+        private sealed class Disguise { public GameObject Box; }
         private readonly Dictionary<uint, Disguise> _disguises = new Dictionary<uint, Disguise>();
 
         public override void OnLoad(IModContext ctx)
@@ -44,6 +39,7 @@ namespace PropHunt
             ctx.Menu.AddButton("Disguise test (me as a box)", ToggleSelfDisguise);
 
             ctx.Events.Update += OnUpdate;
+            ctx.Events.SceneChanged += _ => ForgetDisguises();   // scene objects are gone; drop stale refs
             ctx.Log.Info("ASL Prop Hunt loaded. F8 -> ASL Prop Hunt (needs 2+ players for the full game).");
         }
 
@@ -90,34 +86,6 @@ namespace PropHunt
 
             if (_frame % 20 == 0) ReconcileDisguises();                 // ~3x/sec
             if (_ctx.Net.IsServer && _frame % 10 == 0) HostCatchLogic(); // host runs the rules
-            MaybeDisguiseSelfTest();
-        }
-
-        // One-shot: once the local player exists, briefly disguise it and log whether renderer-hiding +
-        // the box worked. Proves the core trick from the log, no button press needed.
-        private void MaybeDisguiseSelfTest()
-        {
-            if (_selfTestState == 2) return;
-            var me = _ctx.Net.LocalPlayer;
-            var mp = me != null ? me.Player : null;
-            if (mp == null) return;
-
-            if (_selfTestState == 0)
-            {
-                ApplyDisguise(mp, me.NetId);
-                _disguises.TryGetValue(me.NetId, out var d);
-                _ctx.Log.Info($"DISGUISE SELF-TEST: hid {(d != null ? d.Hidden.Count : 0)} renderers, box={(d != null && d.Box != null)} (you should look like a box for ~3s).");
-                _testDisguised = true;          // stop reconcile clearing it during the test
-                _selfTestState = 1; _selfTestFrames = 0;
-                return;
-            }
-            if (++_selfTestFrames > 180)        // ~3s
-            {
-                RemoveDisguise(me.NetId);
-                _testDisguised = false;
-                _ctx.Log.Info("DISGUISE SELF-TEST: reverted to normal.");
-                _selfTestState = 2;
-            }
         }
 
         // Make the local set of disguises match the game state: active props that haven't been found.
@@ -176,12 +144,11 @@ namespace PropHunt
 
         // ---- disguise (visual) ----
 
-        private void ApplyDisguise(MetaPlayer mp, uint netId)
+        // Enable/disable all of a player's renderers. Always fetched fresh from the (live) player, so we
+        // never touch a renderer that the game already destroyed — that would be an uncatchable crash.
+        private void SetPlayerRenderers(MetaPlayer mp, bool enabled)
         {
-            if (_disguises.ContainsKey(netId)) return;
-            var d = new Disguise();
-
-            // hide the player's renderers
+            if (mp == null) return;
             try
             {
                 var comps = mp.GetComponentsInChildren(Il2CppType.Of<Renderer>(), true);
@@ -189,12 +156,18 @@ namespace PropHunt
                     foreach (var c in comps)
                     {
                         var r = c == null ? null : c.TryCast<Renderer>();
-                        if (r != null) { try { r.enabled = false; d.Hidden.Add(r); } catch { } }
+                        if (r != null) { try { r.enabled = enabled; } catch { } }
                     }
             }
-            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: hide renderers failed: {ex.Message}"); }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: set renderers failed: {ex.Message}"); }
+        }
 
-            // show a box where they are
+        private void ApplyDisguise(MetaPlayer mp, uint netId)
+        {
+            if (mp == null || _disguises.ContainsKey(netId)) return;
+            SetPlayerRenderers(mp, false);                    // hide the model
+
+            var d = new Disguise();
             try
             {
                 var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -207,21 +180,30 @@ namespace PropHunt
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: create box failed: {ex.Message}"); }
 
             _disguises[netId] = d;
-            _ctx.Log.Info($"PropHunt: disguised netId={netId} (hid {d.Hidden.Count} renderers, box={(d.Box != null)}).");
+            _ctx.Log.Info($"PropHunt: disguised netId={netId} (box={(d.Box != null)}).");
         }
 
         private void RemoveDisguise(uint netId)
         {
             if (!_disguises.TryGetValue(netId, out var d)) return;
             _disguises.Remove(netId);
-            foreach (var r in d.Hidden) { try { if (r != null) r.enabled = true; } catch { } }
+            SetPlayerRenderers(PlayerByNetId(netId), true);   // re-fetch live player; show its model again
             if (d.Box != null) { try { UnityEngine.Object.Destroy(d.Box); } catch { } }
         }
 
+        // Game stopped (same scene): properly revert each disguise.
         private void ClearAllDisguises()
         {
             var ids = new List<uint>(_disguises.Keys);
             foreach (var nid in ids) RemoveDisguise(nid);
+            _testDisguised = false;
+        }
+
+        // Scene changed: the scene's objects (players + our boxes) are already gone. Just drop our
+        // references without touching them — re-disguising happens fresh in the new scene.
+        private void ForgetDisguises()
+        {
+            _disguises.Clear();
             _testDisguised = false;
         }
 
