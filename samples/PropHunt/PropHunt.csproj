@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- "Tag / You're It" — a new multiplayer game mode built on ASL's synced state + identity. -->
+  <!-- "Prop Hunt" - a new multiplayer game mode built on ASL's synced state + identity. -->
   <PropertyGroup>
-    <AssemblyName>ASLTag</AssemblyName>
-    <RootNamespace>ASLTag</RootNamespace>
+    <AssemblyName>PropHunt</AssemblyName>
+    <RootNamespace>PropHunt</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +23,10 @@
       <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
@@ -39,12 +43,12 @@
 
   <Target Name="DeploySampleMod" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
     <PropertyGroup>
-      <ModOut>$(GamePath)\mods\ASLTag</ModOut>
+      <ModOut>$(GamePath)\mods\PropHunt</ModOut>
     </PropertyGroup>
     <MakeDir Directories="$(ModOut)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
-    <Message Importance="high" Text="ASLTag sample deployed -> $(ModOut)" />
+    <Message Importance="high" Text="PropHunt sample deployed -> $(ModOut)" />
   </Target>
 
 </Project>

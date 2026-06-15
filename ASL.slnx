@@ -2,7 +2,7 @@
   <Folder Name="/samples/">
     <Project Path="samples/HelloMod/HelloMod.csproj" />
     <Project Path="samples/FunPanel/FunPanel.csproj" />
-    <Project Path="samples/ASLTag/ASLTag.csproj" />
+    <Project Path="samples/PropHunt/PropHunt.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ASL.API/ASL.API.csproj" />
