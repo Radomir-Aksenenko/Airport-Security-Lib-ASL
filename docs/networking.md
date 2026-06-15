@@ -202,15 +202,16 @@ entity traffic effectively impossible. The intercept is installed **lazily** on 
 
 ## Verification status
 
-> **Receive confirmed both directions; only send-delivery to a remote peer is unconfirmed.** Against
-> the live interop assemblies the transport installs cleanly and the **receive** intercept is verified
-> on real traffic — server-side in a solo host, **and client-side against a real remote host** (joining
-> a live public game: 30+ genuine `EntityStateMessage`s intercepted cleanly, sentinel correctly
-> distinguished, game unaffected). The **send** is rebuilt onto the active transport (above); it builds
-> the correct batch, transmits without error, and is safe (sending to a non-ASL host neither crashes
-> nor disconnects). The one remaining unknown is whether a sent batch is **delivered to and dispatched
-> by a second ASL peer** — that needs two ASL instances and can't be shown solo. Treat send-delivery as
-> **experimental** until logged.
+> **Receive confirmed; send delivery confirmed; full round-trip pending one final two-peer PASS.**
+> Receive is verified on real traffic — server-side in a solo host and client-side against a real
+> remote host. **Send delivery is now confirmed too:** in a real two-peer session our host→client
+> packet physically arrived at the client (its bytes — magic `ASL1`, channel, payload — showed up in
+> the client's Mirror read). That same test exposed a **wire-format bug** (we wrote `EntityStateMessage.netId`
+> as a fixed 4-byte uint, but the game reads it as a `CompressVarUInt`), which threw
+> `EndOfStreamException` on deserialize. **Fixed** (netId now var-compressed); an in-game **wire
+> self-check** round-trips a batch through Mirror's own reader and passes (`NET WIRE SELF-CHECK: PASS`,
+> netId `0xA51A51A5`). What's left is to log the end-to-end `NET TEST: PASS` between two peers running
+> the fixed build. Treat the round trip as **all-but-confirmed**.
 >
 > **Why a single machine isn't enough:** a solo host's transport does not echo injected packets back
 > to itself (Steam P2P to the same account has no loopback; the game delivers its own host↔client
