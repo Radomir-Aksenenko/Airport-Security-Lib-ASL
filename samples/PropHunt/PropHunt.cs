@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ASL.Api;
 using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Metater;
 using UnityEngine;
 
@@ -36,7 +37,7 @@ namespace PropHunt
             ctx.Menu.AddLabel("Prop Hunt: props turn into boxes, the hunter finds them.");
             ctx.Menu.AddButton("Start Prop Hunt (host)", StartGame);
             ctx.Menu.AddButton("Stop Prop Hunt (host)", StopGame);
-            ctx.Menu.AddButton("Disguise test (me as a box)", ToggleSelfDisguise);
+            ctx.Menu.AddButton("Become what I'm looking at", ToggleLookDisguise);
 
             ctx.Events.Update += OnUpdate;
             ctx.Events.SceneChanged += _ => ForgetDisguises();   // scene objects are gone; drop stale refs
@@ -70,6 +71,12 @@ namespace PropHunt
         private void OnUpdate()
         {
             _frame++;
+
+            // Press G while in a level: become whatever object you're looking at (press again to revert).
+            if (_ctx.Net.IsOnline)
+            {
+                try { if (Input.GetKeyDown(KeyCode.G)) ToggleLookDisguise(); } catch { }
+            }
 
             // keep each box glued to its player
             if (_disguises.Count > 0 && _frame % 2 == 0)
@@ -207,14 +214,120 @@ namespace PropHunt
             _testDisguised = false;
         }
 
-        private void ToggleSelfDisguise()
+        // Toggle: become the object you're aiming at, or revert if already disguised.
+        private void ToggleLookDisguise()
         {
             var me = _ctx.Net.LocalPlayer;
             var mp = me != null ? me.Player : null;
-            if (mp == null) { Announce("Join / start a game first."); return; }
+            if (mp == null) { Announce("Get into a level first."); return; }
 
-            if (_testDisguised) { RemoveDisguise(me.NetId); _testDisguised = false; Announce("Back to normal."); }
-            else { ApplyDisguise(mp, me.NetId); _testDisguised = true; Announce("You are a box now! (test)"); }
+            if (_testDisguised || _disguises.ContainsKey(me.NetId))
+            {
+                RemoveDisguise(me.NetId);
+                _testDisguised = false;
+                Announce("Back to normal.");
+                return;
+            }
+
+            _testDisguised = true;   // keep the round-reconcile from clearing a manual disguise
+            DisguiseAsLookedAt(mp, me.NetId);
+        }
+
+        // Raycast from the camera, find the WHOLE object you're aiming at (its prop root), and rebuild a
+        // pure-visual copy: every mesh part with its materials and its pose relative to the root, so a
+        // multi-part prop (a flower + its pot, a whole dynamite bundle) comes across complete and rightly
+        // oriented. We only reference shared meshes/materials (never read vertices), so it stays safe.
+        private void DisguiseAsLookedAt(MetaPlayer me, uint netId)
+        {
+            var cam = Camera.main;
+            if (cam == null) { Announce("No camera found."); _testDisguised = false; return; }
+
+            RaycastHit hit;
+            bool got;
+            try { got = Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, 6f); }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: raycast failed: {ex.Message}"); _testDisguised = false; return; }
+
+            if (!got) { Announce("Aim at an object, then press G."); _testDisguised = false; return; }
+
+            // Find the prop root: the rigidbody/networked-item root that owns the whole object, so we copy
+            // all of its parts (not just the one collider we hit).
+            Transform root = hit.transform;
+            string what = root.name;
+            try
+            {
+                var rb = root.GetComponentInParent(Il2CppType.Of<Rigidbody>());
+                var rbc = rb != null ? rb.TryCast<Rigidbody>() : null;
+                if (rbc != null) { root = rbc.transform; what = root.name; }
+                else
+                {
+                    var ni = root.GetComponentInParent(Il2CppType.Of<Mirror.NetworkIdentity>());
+                    var nic = ni != null ? ni.TryCast<Mirror.NetworkIdentity>() : null;
+                    if (nic != null) { root = nic.transform; what = root.name; }
+                }
+            }
+            catch { }
+
+            var parts = new List<MeshFilter>();
+            try
+            {
+                var mfs = root.GetComponentsInChildren(Il2CppType.Of<MeshFilter>(), false);
+                if (mfs != null)
+                    foreach (var c in mfs)
+                    {
+                        var mf = c != null ? c.TryCast<MeshFilter>() : null;
+                        if (mf != null && mf.sharedMesh != null) parts.Add(mf);
+                    }
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: gather meshes failed: {ex.Message}"); }
+
+            if (parts.Count == 0)
+            {
+                _ctx.Log.Info($"PropHunt: '{what}' has no mesh; using a box.");
+                ApplyDisguise(me, netId);
+                Announce("Couldn't copy that - you're a box.");
+                return;
+            }
+
+            SetPlayerRenderers(me, false);   // hide the player's model
+
+            var d = new Disguise();
+            try
+            {
+                // D snapshots the prop's world pose; each part keeps its world transform via
+                // SetParent(worldPositionStays), so the assembly is identical to the original.
+                var D = new GameObject("ASL_Prop");
+                D.transform.position = root.position;
+                D.transform.rotation = root.rotation;
+                D.transform.localScale = root.lossyScale;
+
+                foreach (var p in parts)
+                {
+                    try
+                    {
+                        var C = new GameObject("part");
+                        var nmf = C.AddComponent(Il2CppType.Of<MeshFilter>()).TryCast<MeshFilter>();
+                        var nmr = C.AddComponent(Il2CppType.Of<MeshRenderer>()).TryCast<MeshRenderer>();
+                        if (nmf != null) nmf.sharedMesh = p.sharedMesh;
+                        var prc = p.GetComponent(Il2CppType.Of<MeshRenderer>());
+                        var pr = prc != null ? prc.TryCast<MeshRenderer>() : null;
+                        if (nmr != null && pr != null) nmr.sharedMaterials = pr.sharedMaterials;
+
+                        C.transform.position = p.transform.position;
+                        C.transform.rotation = p.transform.rotation;
+                        C.transform.localScale = p.transform.lossyScale;
+                        C.transform.SetParent(D.transform, true);   // keep world pose -> relative to root
+                    }
+                    catch (Exception ex) { _ctx.Log.Warning($"PropHunt: part copy failed: {ex.Message}"); }
+                }
+
+                try { D.transform.position = me.transform.position; } catch { }   // move the whole prop to the player
+                d.Box = D;
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: build prop failed: {ex.Message}"); }
+
+            _disguises[netId] = d;
+            _ctx.Log.Info($"PropHunt: disguised netId={netId} as '{what}' ({parts.Count} part(s)).");
+            Announce($"You are now a '{what}'!");
         }
 
         // ---- state + helpers ----

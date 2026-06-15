@@ -27,6 +27,10 @@
       <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppInterop.Runtime">
       <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
