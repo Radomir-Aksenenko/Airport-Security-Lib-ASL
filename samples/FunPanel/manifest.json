@@ -1,0 +1,9 @@
+{
+  "id": "com.asl.funpanel",
+  "name": "Fun Panel",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "Interactive showcase mod: an F8 menu that gives your player speed boosts, coffee rushes, jumps and on-screen messages — driving the real game player through ASL.",
+  "type": "dll",
+  "entry": "FunPanel.dll"
+}

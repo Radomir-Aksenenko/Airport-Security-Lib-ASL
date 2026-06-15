@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Interactive showcase mod. Drives the real game player (MetaPlayer) and the game's on-screen
+       announcement UI through ASL's menu + player-identity API. -->
+  <PropertyGroup>
+    <AssemblyName>FunPanel</AssemblyName>
+    <RootNamespace>FunPanel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ASL.API\ASL.API.csproj" Private="false" />
+  </ItemGroup>
+
+  <!-- Game interop: MetaPlayer + LocalAnnouncementText live in Assembly-CSharp. -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GamePath)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mirror">
+      <HintPath>$(GamePath)\BepInEx\interop\Mirror.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GamePath)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>$(GamePath)\BepInEx\interop\Il2CppSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeploySampleMod" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+    <PropertyGroup>
+      <ModOut>$(GamePath)\mods\FunPanel</ModOut>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModOut)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="FunPanel sample deployed -> $(ModOut)" />
+  </Target>
+
+</Project>

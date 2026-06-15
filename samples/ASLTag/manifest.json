@@ -1,0 +1,9 @@
+{
+  "id": "com.asl.tag",
+  "name": "ASL Tag",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "A brand-new multiplayer game mode the base game doesn't have: tag / you're It. The host runs it, proximity passes 'It' between players, and everyone sees the state — built entirely on ASL's synced state + player identity + the message transport.",
+  "type": "dll",
+  "entry": "ASLTag.dll"
+}
