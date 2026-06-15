@@ -9,23 +9,28 @@ using UnityEngine;
 namespace PropHunt
 {
     /// <summary>
-    /// Prop Hunt as a real multiplayer mode. A player aims at an object and presses <b>G</b> to become
-    /// it; that choice is replicated through an ASL synced store as the object's Mirror net id, so
-    /// EVERY client hides that player's model and rebuilds the same object on them. A late joiner gets
-    /// the current disguises on arrival. The host also runs a hunter that "finds" props by proximity.
+    /// Multiplayer Prop Hunt. Aim at an object and press <b>G</b> to become it — your choice replicates
+    /// through an ASL synced store (the object's Mirror net id, or a scene-hierarchy path for static
+    /// objects), so EVERY client hides your model and rebuilds the same object on you, sitting on the
+    /// floor. The host runs a timed round: one hunter, the rest are props; the hunter finds props by
+    /// walking into them; props win if the timer runs out.
     /// </summary>
     public sealed class PropHunt : AslMod
     {
         private const string StoreId = "com.asl.prophunt/state";
-        private const float CatchRange = 3.0f;
+        private const float CatchRange = 2.5f;
+        private const float RoundSeconds = 150f;
 
         private IModContext _ctx;
         private IAslSync _state;
         private int _frame;
 
-        // What we've actually built locally for each player: the visual object + the synced value it
-        // was built from (so we rebuild only when the value changes).
-        private sealed class Disguise { public GameObject Obj; public string Value; }
+        // host-only round bookkeeping
+        private float _roundEndsAt;
+        private int _lastMilestone;
+        private int _msgCounter;
+
+        private sealed class Disguise { public GameObject Obj; public string Value; public float YOffset; }
         private readonly Dictionary<uint, Disguise> _disguises = new Dictionary<uint, Disguise>();
 
         public override void OnLoad(IModContext ctx)
@@ -40,7 +45,7 @@ namespace PropHunt
             ctx.Menu.AddButton("Become what I'm looking at", ToggleLookDisguise);
 
             ctx.Events.Update += OnUpdate;
-            ctx.Events.SceneChanged += _ => _disguises.Clear();   // scene objects gone; drop stale refs
+            ctx.Events.SceneChanged += _ => _disguises.Clear();
             ctx.Log.Info("ASL Prop Hunt loaded. Aim at an object and press G to become it.");
         }
 
@@ -53,23 +58,25 @@ namespace PropHunt
                 try { if (Input.GetKeyDown(KeyCode.G)) ToggleLookDisguise(); } catch { }
             }
 
-            // keep each disguise object glued to its player
+            // keep each disguise glued to its player, sitting on the floor
             if (_disguises.Count > 0 && _frame % 2 == 0)
             {
                 foreach (var kv in _disguises)
                 {
                     var mp = PlayerByNetId(kv.Key);
-                    if (mp != null && kv.Value.Obj != null) { try { kv.Value.Obj.transform.position = mp.transform.position; } catch { } }
+                    if (mp != null && kv.Value.Obj != null)
+                    {
+                        try { kv.Value.Obj.transform.position = mp.transform.position + new Vector3(0f, kv.Value.YOffset, 0f); } catch { }
+                    }
                 }
             }
 
             if (_frame % 20 == 0) ReconcileDisguises();
-            if (_ctx.Net.IsServer && _frame % 10 == 0) HostCatchLogic();
+            if (_ctx.Net.IsServer && _frame % 10 == 0) HostGameTick();
         }
 
         // ---- disguise control ----
 
-        // Toggle MY disguise: become the networked object I'm aiming at (replicated to everyone), or revert.
         private void ToggleLookDisguise()
         {
             var me = _ctx.Net.LocalPlayer;
@@ -92,17 +99,18 @@ namespace PropHunt
                         what = hit.transform.name;
                         var nic = hit.transform.GetComponentInParent(Il2CppType.Of<NetworkIdentity>());
                         var ni = nic != null ? nic.TryCast<NetworkIdentity>() : null;
-                        if (ni != null && ni.netId != 0) { value = ni.netId.ToString(); what = ni.name; }
+                        if (ni != null && ni.netId != 0) { value = "n:" + ni.netId; what = ni.name; }
+                        else { var path = PathOf(hit.transform); if (path != null) { value = "p:" + path; } }   // static object -> hierarchy path
                     }
                 }
             }
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: raycast failed: {ex.Message}"); }
 
-            _state.Set(key, value);   // replicate; every client rebuilds from this
-            Announce(value == "box" ? "You're a box (that wasn't a networked prop)." : $"You are now a '{what}'!");
+            _state.Set(key, value);
+            Announce(value == "box" ? "You're a box." : $"You are now a '{what}'!");
         }
 
-        // ---- reconcile: every client applies the per-player disguise from the synced state ----
+        // ---- reconcile: each client applies per-player disguise from synced state ----
 
         private void ReconcileDisguises()
         {
@@ -115,7 +123,6 @@ namespace PropHunt
                 if (!string.IsNullOrEmpty(desired)) ApplyDisguise(p.Player, p.NetId, desired);
             }
 
-            // players who left: revert + drop
             var gone = new List<uint>();
             foreach (var kv in _disguises)
             {
@@ -134,8 +141,14 @@ namespace PropHunt
             var d = new Disguise { Value = value };
             try
             {
-                if (value == "box") d.Obj = MakeBox(mp);
-                else { uint objNetId; uint.TryParse(value, out objNetId); d.Obj = MakePropFromNetId(mp, objNetId); }
+                Transform root = null;
+                if (value != "box")
+                {
+                    if (value.StartsWith("n:")) { uint.TryParse(value.Substring(2), out var on); root = FindSpawnedTransform(on); }
+                    else if (value.StartsWith("p:")) { root = FindByPath(mp, value.Substring(2)); }
+                }
+                d.Obj = root != null ? CopyMeshes(root, mp) : MakeBox(mp);
+                d.YOffset = FloorAlign(d.Obj, mp);   // lift so it rests on the floor
             }
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: apply disguise failed: {ex.Message}"); }
 
@@ -162,13 +175,6 @@ namespace PropHunt
             return box;
         }
 
-        private GameObject MakePropFromNetId(MetaPlayer mp, uint objNetId)
-        {
-            var root = FindSpawnedTransform(objNetId);
-            return root != null ? CopyMeshes(root, mp) : MakeBox(mp);   // not spawned here -> box
-        }
-
-        // Rebuild a pure-visual copy of every mesh part under the prop root, keeping each part's pose.
         private GameObject CopyMeshes(Transform root, MetaPlayer mp)
         {
             var parts = new List<MeshFilter>();
@@ -214,7 +220,33 @@ namespace PropHunt
             return D;
         }
 
-        // Find a spawned networked object by its net id (works on host and client — same id everywhere).
+        // Lift the disguise so its lowest point sits at the player's feet (stops it sinking through the floor).
+        private float FloorAlign(GameObject obj, MetaPlayer mp)
+        {
+            if (obj == null) return 0f;
+            try
+            {
+                var rends = obj.GetComponentsInChildren(Il2CppType.Of<Renderer>(), false);
+                bool any = false;
+                Bounds b = new Bounds();
+                if (rends != null)
+                    foreach (var c in rends)
+                    {
+                        var r = c != null ? c.TryCast<Renderer>() : null;
+                        if (r == null) continue;
+                        if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+                    }
+                if (any)
+                {
+                    float yOffset = mp.transform.position.y - b.min.y;
+                    var pos = obj.transform.position; pos.y += yOffset; obj.transform.position = pos;
+                    return yOffset;
+                }
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: floor align failed: {ex.Message}"); }
+            return 0f;
+        }
+
         private Transform FindSpawnedTransform(uint netId)
         {
             try
@@ -226,6 +258,40 @@ namespace PropHunt
             }
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: find spawned failed: {ex.Message}"); }
             return null;
+        }
+
+        // Scene-hierarchy path of sibling indices (deterministic across clients for static scene objects).
+        private string PathOf(Transform t)
+        {
+            try
+            {
+                var idx = new List<int>();
+                var cur = t;
+                while (cur != null) { idx.Insert(0, cur.GetSiblingIndex()); cur = cur.parent; }
+                return string.Join("/", idx.ToArray());
+            }
+            catch { return null; }
+        }
+
+        private Transform FindByPath(MetaPlayer scopePlayer, string path)
+        {
+            try
+            {
+                var parts = path.Split('/');
+                if (parts.Length == 0) return null;
+                var roots = scopePlayer.gameObject.scene.GetRootGameObjects();
+                int r0 = int.Parse(parts[0]);
+                if (roots == null || r0 < 0 || r0 >= roots.Length) return null;
+                var cur = roots[r0].transform;
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    int ci = int.Parse(parts[i]);
+                    if (ci < 0 || ci >= cur.childCount) return null;
+                    cur = cur.GetChild(ci);
+                }
+                return cur;
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: find by path failed: {ex.Message}"); return null; }
         }
 
         private void SetPlayerRenderers(MetaPlayer mp, bool enabled)
@@ -244,7 +310,7 @@ namespace PropHunt
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: set renderers failed: {ex.Message}"); }
         }
 
-        // ---- game mode ----
+        // ---- game mode (host-authoritative) ----
 
         private void StartGame()
         {
@@ -256,8 +322,12 @@ namespace PropHunt
             _state.Set("hunter", hunter.ToString());
             _state.Set("found", "");
             _state.Set("active", "1");
-            foreach (var p in players) _state.Set("d:" + p.NetId, p.NetId == hunter ? "" : "box");   // props start boxed
-            Announce($"Prop Hunt! Hunter is {NameOf(hunter)}. Props: aim + G to hide as objects!");
+            foreach (var p in players) _state.Set("d:" + p.NetId, p.NetId == hunter ? "" : "box");
+
+            _roundEndsAt = Now() + RoundSeconds;
+            _lastMilestone = int.MaxValue;
+            int propCount = players.Count - 1;
+            HostAnnounce($"Prop Hunt! Hunter: {NameOf(hunter)}. {propCount} prop(s) hiding. {(int)RoundSeconds}s.");
         }
 
         private void StopGame()
@@ -267,32 +337,54 @@ namespace PropHunt
             foreach (var p in _ctx.Net.Players) _state.Set("d:" + p.NetId, "");
         }
 
-        private void HostCatchLogic()
+        private void HostGameTick()
         {
             if (_state.Get("active") != "1") return;
+
             uint hunter = ParseId(_state.Get("hunter"));
             var hp = PlayerByNetId(hunter);
-            if (hp == null) return;
-            Vector3 hpos; try { hpos = hp.transform.position; } catch { return; }
-
             var found = ParseIds(_state.Get("found"));
-            int props = 0;
-            foreach (var p in _ctx.Net.Players)
+
+            // catching: hunter walks into a prop
+            if (hp != null)
             {
-                if (p.NetId == hunter) continue;
-                props++;
-                if (found.Contains(p.NetId) || p.Player == null) continue;
-                Vector3 pos; try { pos = p.Player.transform.position; } catch { continue; }
-                if (Vector3.Distance(hpos, pos) <= CatchRange)
+                Vector3 hpos;
+                bool haveHpos = true;
+                try { hpos = hp.transform.position; } catch { hpos = Vector3.zero; haveHpos = false; }
+                if (haveHpos)
                 {
-                    found.Add(p.NetId);
-                    _state.Set("found", JoinIds(found));
-                    _state.Set("d:" + p.NetId, "");   // reveal the found prop everywhere
-                    Announce($"{NameOf(p.NetId)} was found!");
-                    break;
+                    int props = 0;
+                    foreach (var p in _ctx.Net.Players)
+                    {
+                        if (p.NetId == hunter) continue;
+                        props++;
+                        if (found.Contains(p.NetId) || p.Player == null) continue;
+                        Vector3 pos; try { pos = p.Player.transform.position; } catch { continue; }
+                        if (Vector3.Distance(hpos, pos) <= CatchRange)
+                        {
+                            found.Add(p.NetId);
+                            _state.Set("found", JoinIds(found));
+                            _state.Set("d:" + p.NetId, "");
+                            HostAnnounce($"{NameOf(p.NetId)} was found! {Math.Max(0, props - found.Count)} left.");
+                            break;
+                        }
+                    }
+                    if (props > 0 && found.Count >= props) { _state.Set("active", "0"); HostAnnounce("Hunter wins - all props found!"); return; }
                 }
             }
-            if (props > 0 && found.Count >= props) { _state.Set("active", "0"); Announce("Hunter wins - all props found!"); }
+
+            // timer
+            int left = (int)Math.Ceiling(_roundEndsAt - Now());
+            if (left <= 0) { _state.Set("active", "0"); HostAnnounce("Time's up - props win!"); return; }
+            int bucket = left <= 10 ? left : (left <= 30 ? 30 : (left <= 60 ? 60 : 999));
+            if (bucket < _lastMilestone) { _lastMilestone = bucket; if (bucket <= 60) HostAnnounce($"{left}s left."); }
+        }
+
+        // Broadcast an announcement to every client (the synced "msg" key triggers it on each peer).
+        private void HostAnnounce(string text)
+        {
+            _state.Set("msg", (++_msgCounter) + "|" + text);
+            Announce(text);
         }
 
         private void OnStateChanged(string key, string value)
@@ -302,7 +394,12 @@ namespace PropHunt
                 uint hunter = ParseId(_state.Get("hunter"));
                 var me = _ctx.Net.LocalPlayer;
                 if (me != null)
-                    Announce(me.NetId == hunter ? "You are the HUNTER - find the props!" : "You are a PROP - aim at an object and press G!");
+                    Announce(me.NetId == hunter ? "You are the HUNTER - walk into props to find them!" : "You are a PROP - aim at an object and press G to hide!");
+            }
+            else if (key == "msg")
+            {
+                int bar = value.IndexOf('|');
+                if (bar >= 0) Announce(value.Substring(bar + 1));
             }
         }
 
@@ -321,6 +418,7 @@ namespace PropHunt
             return "player#" + netId;
         }
 
+        private static float Now() => Time.realtimeSinceStartup;
         private static uint ParseId(string s) { uint.TryParse(s, out var n); return n; }
 
         private static HashSet<uint> ParseIds(string csv)
