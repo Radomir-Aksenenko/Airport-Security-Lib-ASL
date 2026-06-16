@@ -33,6 +33,8 @@ public interface IModContext
     IAslEvents  Events       { get; }  // game events
     IModHooks   Hooks        { get; }  // opt-in Harmony hooks
     IModMenu    Menu         { get; }  // in-game menu (F8)
+    IAslUi      Ui           { get; }  // on-screen UI (announcement banner)
+    IAslInput   Input        { get; }  // keyboard input + rebindable, conflict-checked keybinds
     IAslNet     Net          { get; }  // networking: awareness + message transport
 }
 ```
@@ -133,6 +135,74 @@ ctx.Menu.AddButton("Give item", () => GiveItem());
 ctx.Menu.AddSlider("Speed", 1f, 10f, 5f, v => _speed = v);
 ```
 
+## On-screen UI
+
+`ctx.Ui` (`IAslUi`). Drives the game's own widgets so your messages look native.
+
+```csharp
+public interface IAslUi
+{
+    void Announce(string text, float seconds = 2.5f);  // the game's on-screen announcement banner
+}
+```
+
+```csharp
+ctx.Ui.Announce("Round starting!");
+ctx.Ui.Announce("You win!", 4f);
+```
+
+Safe to call before a level loads (it logs instead of throwing if the banner isn't up yet).
+
+## Input & keybinds
+
+`ctx.Input` (`IAslInput`). The recommended path is a **named keybind**: it shows up automatically in
+the F8 menu under your mod, the player can **rebind** it, the choice is **saved across restarts**, and
+ASL keeps it from **clashing** with other mods' keys (and warns on keys the game itself uses). There
+are also raw passthrough queries for quick throwaway keys.
+
+```csharp
+public interface IAslInput
+{
+    IAslKeybind RegisterKey(string id, string displayName, KeyCode defaultKey);
+    bool GetKeyDown(KeyCode key);   // raw passthrough, no registration / conflict checks
+    bool GetKey(KeyCode key);
+    bool GetKeyUp(KeyCode key);
+}
+
+public interface IAslKeybind
+{
+    string  Id          { get; }   // your id, namespaced by mod
+    string  DisplayName { get; }    // shown in the Controls UI
+    KeyCode Key         { get; }    // current binding (after any rebind); None if unbound
+    bool    WasPressed  { get; }    // true on the frame it went down
+    bool    IsHeld      { get; }    // true while held
+    bool    WasReleased { get; }    // true on the frame it was released
+    bool    HasConflict { get; }    // clashes with another mod's key or one the game uses
+    event Action Pressed;           // fires once when it goes down
+}
+```
+
+```csharp
+private IAslKeybind _disguise;
+
+public override void OnLoad(IModContext ctx)
+{
+    _disguise = ctx.Input.RegisterKey("disguise", "Disguise / undisguise", KeyCode.G);
+
+    _disguise.Pressed += () => ToggleDisguise();                        // event style, or…
+    ctx.Events.Update += () => { if (_disguise.WasPressed) ToggleDisguise(); };  // …poll in Update
+}
+```
+
+How conflicts are handled:
+- **Mod vs mod** — a rebind onto a key another mod already uses is **rejected** (the old binding
+  stays); the menu and `HasConflict` make it visible.
+- **Mod vs game** — binding onto a key the game uses (movement, jump, …) is **allowed but flagged**
+  (`HasConflict`, a warning in the log), since it may double-trigger. The reserved-game-key set is a
+  conservative best-effort list (WASD, arrows, Space, Shift, Ctrl, mouse, Tab, Esc).
+- The player rebinds in the **F8 menu**: open your mod, click the keybind row, press a key (Esc
+  cancels). Bindings persist to `BepInEx/config/ASL.Keybinds.cfg` (editable by hand too).
+
 ## Networking
 
 `ctx.Net` (`IAslNet`). The game uses Mirror; ASL exposes two layers — read-only **awareness** and a
@@ -176,6 +246,9 @@ public interface IAslNet
 
     // --- synced state ---
     IAslSync GetSync(string id);                  // host-authoritative shared key/value store
+
+    // --- spawned objects ---
+    GameObject FindObject(uint netId);            // resolve a networked object by net id (host or client)
 }
 ```
 
@@ -270,12 +343,42 @@ public interface IAslPlayer
     int    ConnectionId { get; } // server-side id (== AslNetMessage.SenderConnectionId), else -1
     bool   IsLocal      { get; } // this is you
     string Name         { get; } // local: from Steam; remote: empty for now (best-effort)
+
+    // --- look + control (most meaningful for the local player) ---
+    LookHit GetLookedAt(float maxDistance = 6f); // camera raycast: what you're aiming at
+    void Freeze();                               // stop movement + gravity (hang in place)
+    void Unfreeze();
+    bool IsFrozen { get; }
+    void Teleport(Vector3 position);
+    void SetColliderSize(float radius, float height);  // shrink/grow the movement collider
+    void ResetCollider();                              // restore after SetColliderSize
 }
 
 ctx.Net.PlayerJoined += p => ctx.Log.Info($"{p.Name} joined (netId {p.NetId})");
 var sender = ctx.Net.GetPlayer(raw.SenderConnectionId);   // server: who sent a message
 foreach (var p in ctx.Net.Players) { /* roster */ }
 ```
+
+`GetLookedAt` returns a `LookHit` (a camera raycast result):
+
+```csharp
+public struct LookHit
+{
+    bool      Hit;       // did the ray hit anything in range?
+    GameObject Object;   // the hit object
+    Transform Transform; // its transform
+    Vector3   Point;     // world hit point
+    float     Distance;
+    uint      NetId;     // hit object's Mirror net id (0 if not networked) — feed to Net.FindObject
+}
+
+var look = ctx.Net.LocalPlayer.GetLookedAt();
+if (look.Hit && look.NetId != 0) ctx.Log.Info($"aiming at networked object {look.NetId}");
+```
+
+`Freeze` / `SetColliderSize` drive the local player's movement controller (the same levers PropHunt
+uses to hang on a wall and to shrink to a small prop). `SetColliderSize` remembers the originals;
+`ResetCollider` puts them back.
 
 `Players` / `PlayerJoined` / `PlayerLeft` are poll-driven on the **main thread**. `NetId`,
 `ConnectionId`, `IsLocal`, and `Player` are always reliable; `Name` is best-effort (see

@@ -30,7 +30,11 @@ namespace ASL
             }
         }
 
-        public IModMenu For(string modName)
+        public IModMenu For(string modName) => new ModMenu(EnsureSection(modName));
+
+        /// <summary>Get (creating if needed) the section a mod's controls live in. Shared by the mod's
+        /// <see cref="IModMenu"/> and its <c>ctx.Input</c>, so registered keybinds show on the same page.</summary>
+        internal Section EnsureSection(string modName)
         {
             if (!_byMod.TryGetValue(modName, out var sec))
             {
@@ -38,7 +42,7 @@ namespace ASL
                 _byMod[modName] = sec;
                 _sections.Add(sec);
             }
-            return new ModMenu(sec);
+            return sec;
         }
 
         internal sealed class Section
@@ -55,6 +59,7 @@ namespace ASL
     internal sealed class ButtonControl : MenuControl { public Action OnClick; }
     internal sealed class ToggleControl : MenuControl { public bool Value; public Action<bool> OnChanged; }
     internal sealed class SliderControl : MenuControl { public float Min, Max, Value; public Action<float> OnChanged; }
+    internal sealed class KeybindControl : MenuControl { public AslKeybind Bind; }
 
     /// <summary>Per-mod <see cref="IModMenu"/> that appends to one section.</summary>
     internal sealed class ModMenu : IModMenu

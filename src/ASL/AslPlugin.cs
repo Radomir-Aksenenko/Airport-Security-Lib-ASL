@@ -39,7 +39,13 @@ namespace ASL
         internal static MenuManager Menu { get; private set; }
 
         /// <summary>Native (uGUI) renderer for the mod menu, in the game's style.</summary>
-        internal static NativeMenu Ui { get; private set; }
+        internal static NativeMenu MenuUi { get; private set; }
+
+        /// <summary>On-screen UI helper (announcement banner). Surfaced to mods via <c>IModContext.Ui</c>.</summary>
+        internal static UiManager UiApi { get; private set; }
+
+        /// <summary>Rebindable, conflict-checked keybinds. Surfaced to mods via <c>IModContext.Input</c>.</summary>
+        internal static KeybindManager Keybinds { get; private set; }
 
         /// <summary>Networking awareness. Surfaced to mods through <c>IModContext.Net</c>.</summary>
         internal static NetState Net { get; private set; }
@@ -55,8 +61,11 @@ namespace ASL
             Hooks = new HookManager(Harmony, Logger);
             Content = new ContentRegistry(Logger, Bus);
             Menu = new MenuManager();
-            Ui = new NativeMenu(Logger, Menu);
+            Keybinds = new KeybindManager(Logger, Bus);
+            MenuUi = new NativeMenu(Logger, Menu, Keybinds);
+            UiApi = new UiManager(Logger);
             Net = new NetState(Logger, Harmony);
+            PlayerControl.Init(Logger);
 
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");
 
@@ -65,7 +74,7 @@ namespace ASL
 
             // mods/ lives next to the game executable so it is easy for players to find.
             var modsRoot = Path.Combine(Paths.GameRootPath, "mods");
-            _loader = new ModLoader(Logger, modsRoot, Bus, Hooks, Content, Menu, Net);
+            _loader = new ModLoader(Logger, modsRoot, Bus, Hooks, Content, Menu, Net, UiApi, Keybinds);
             _loader.DiscoverAndLoad();
 
             Logger.LogInfo("Core online.");

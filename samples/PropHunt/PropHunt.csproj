@@ -45,7 +45,12 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="DeploySampleMod" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+  <!--
+    PropHunt is an EXAMPLE. The default build compiles it (so it stays compile-checked) but does NOT
+    copy it into the game's mods\ folder — players get it from the distributable bundle, not from every
+    dev build. Opt in for local testing with:  dotnet build -p:DeploySamples=true
+  -->
+  <Target Name="DeploySampleMod" AfterTargets="Build" Condition="'$(DeploySamples)' == 'true'">
     <PropertyGroup>
       <ModOut>$(GamePath)\mods\PropHunt</ModOut>
     </PropertyGroup>

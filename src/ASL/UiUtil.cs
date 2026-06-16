@@ -1,4 +1,5 @@
 using System;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using TMPro;
 using UnityEngine;
@@ -8,6 +9,47 @@ namespace ASL
 {
     internal static class UiUtil
     {
+        /// <summary>
+        /// Best-effort: the scrolling texture + scroll speed the game's Settings screen uses for its
+        /// flowing background (a <c>MaterialOffsetScroller</c> animating a material's texture offset). The
+        /// mod menu reuses these to scroll its own backdrop. Returns false if not found yet.
+        /// </summary>
+        public static bool SettingsScrollTexture(out Texture tex, out Vector2 speed)
+        {
+            tex = null; speed = Vector2.zero;
+            try
+            {
+                var arr = Resources.FindObjectsOfTypeAll(Il2CppType.Of<MaterialOffsetScroller>());
+                if (arr == null) return false;
+                foreach (var o in arr)
+                {
+                    var sc = o != null ? o.TryCast<MaterialOffsetScroller>() : null;
+                    if (sc == null) continue;
+
+                    Material mat = null;
+                    try { mat = sc.targetMaterial; } catch { }
+                    if (mat == null) { try { var r = sc.targetRenderer; if (r != null) mat = r.sharedMaterial; } catch { } }
+                    if (mat == null) continue;
+
+                    Texture t = null;
+                    try
+                    {
+                        var prop = sc.resolvedTextureProperty;
+                        if (!string.IsNullOrEmpty(prop) && mat.HasProperty(prop)) t = mat.GetTexture(prop);
+                        if (t == null) t = mat.mainTexture;
+                    }
+                    catch { }
+                    if (t == null) continue;
+
+                    tex = t;
+                    try { speed = sc.offsetSpeed; } catch { }
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         /// <summary>
         /// Best-effort: the sprite of the game's Settings panel, so the mod menu can wear the same
         /// background. Returns null if the Settings screen isn't available yet.

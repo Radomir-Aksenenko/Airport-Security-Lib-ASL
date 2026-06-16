@@ -12,11 +12,17 @@
 dotnet build ASL.slnx -c Release
 ```
 
-The solution is in the SDK's `.slnx` format (SDK 9/10+). It contains three projects:
+The solution is in the SDK's `.slnx` format (SDK 9/10+). It contains:
 
 - `src/ASL.API` → `ASL.API.dll` — the stable public contract.
 - `src/ASL` → `ASL.dll` — the framework (references ASL.API + Roslyn + BepInEx/interop).
-- `samples/HelloMod` → `HelloMod.dll` — example DLL mod / template.
+- `samples/PropHunt` → `PropHunt.dll` — the showcase mod (multiplayer Prop Hunt).
+
+The default build deploys **only the framework** (`src/ASL` → `plugins\`). The samples are examples:
+they compile, but **none is copied into the game's `mods\` folder by default** — players get PropHunt
+from the distributable bundle, not from every dev build. To install PropHunt locally for testing, opt
+in with `-p:DeploySamples=true` (see below). `samples/HelloMod` (the minimal DLL-mod template) and
+`samples/FunPanel` (real-player tricks) stay in the repo as standalone source, **not** in the solution.
 
 ## Configuration (MSBuild properties)
 
@@ -25,24 +31,29 @@ Set in `Directory.Build.props`, overridable on the command line:
 | Property | Default | Meaning |
 |---|---|---|
 | `GamePath` | `D:\Games\Steam\steamapps\common\Airport Security Sucks!` | Game install root (contains `BepInEx\`). |
-| `DeployToGame` | `true` | Copy build output into the game after building. |
+| `DeployToGame` | `true` | Copy the **framework** output into `BepInEx\plugins\` after building. |
+| `DeploySamples` | `false` | Also copy the PropHunt sample into the game's `mods\` folder. Opt-in, for local testing. |
 
 Override for your machine:
 
 ```pwsh
 dotnet build ASL.slnx -c Release /p:GamePath="C:\Path\To\Airport Security Sucks!"
-dotnet build ASL.slnx -c Release /p:DeployToGame=false   # build only, no copy
+dotnet build ASL.slnx -c Release /p:DeployToGame=false    # build only, no copy
+dotnet build ASL.slnx -c Release /p:DeploySamples=true    # also install PropHunt into mods\ for testing
 ```
 
 ## What deploy copies
 
-When `DeployToGame=true`:
+When `DeployToGame=true` (the default):
 
 - `src/ASL` copies **all** its output DLLs to `<GamePath>\BepInEx\plugins\`:
   `ASL.dll`, `ASL.API.dll`, and the Roslyn dependencies
   (`Microsoft.CodeAnalysis*.dll`, `System.Collections.Immutable.dll`,
   `System.Reflection.Metadata.dll`).
-- `samples/HelloMod` copies `HelloMod.dll` + its `manifest.json` to `<GamePath>\mods\HelloMod\`.
+
+The PropHunt sample is **not** copied to `mods\` unless you also pass `-p:DeploySamples=true` — then its
+`PropHunt.dll` + `manifest.json` land in `<GamePath>\mods\PropHunt\`. (Building `HelloMod`/`FunPanel` on
+their own still copies them to `mods\<Name>\`.)
 
 > The Roslyn DLLs are needed only for **script mods**. `<CopyLocalLockFileAssemblies>true</…>` in
 > `src/ASL/ASL.csproj` is what pulls them into the output folder (class libraries don't copy NuGet

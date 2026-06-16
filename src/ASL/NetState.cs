@@ -206,6 +206,20 @@ namespace ASL
             }
         }
 
+        // ---- Spawned objects ----
+
+        public UnityEngine.GameObject FindObject(uint netId)
+        {
+            try
+            {
+                NetworkIdentity ni = null;
+                try { if (NetworkServer.active && NetworkServer.spawned != null && NetworkServer.spawned.ContainsKey(netId)) ni = NetworkServer.spawned[netId]; } catch { }
+                if (ni == null) { try { if (NetworkClient.spawned != null && NetworkClient.spawned.ContainsKey(netId)) ni = NetworkClient.spawned[netId]; } catch { } }
+                return ni != null ? ni.gameObject : null;
+            }
+            catch (Exception ex) { _log.LogError($"Net.FindObject failed: {ex.Message}"); return null; }
+        }
+
         public void Poll()
         {
             // Connection-count change -> ConnectionsChanged.

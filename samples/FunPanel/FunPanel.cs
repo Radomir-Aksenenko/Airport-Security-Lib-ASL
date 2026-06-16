@@ -67,16 +67,7 @@ namespace FunPanel
             catch (Exception ex) { _ctx.Log.Error($"FunPanel action failed: {ex.Message}"); }
         }
 
-        // Pop text on the game's own announcement banner (the thing it uses for in-game messages).
-        private void Announce(string text)
-        {
-            try
-            {
-                var banner = LocalAnnouncementText.Instance;
-                if (banner != null) banner.DisplayForSeconds(text, 2.5f);
-                else _ctx.Log.Info($"[announce] {text}");
-            }
-            catch (Exception ex) { _ctx.Log.Warning($"announce failed: {ex.Message}"); }
-        }
+        // Pop text on the game's own announcement banner — now a one-liner through the library.
+        private void Announce(string text) => _ctx.Ui.Announce(text);
     }
 }

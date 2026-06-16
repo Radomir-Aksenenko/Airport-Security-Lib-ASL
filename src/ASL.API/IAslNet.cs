@@ -155,5 +155,15 @@ namespace ASL.Api
         /// (e.g. <c>"com.author.mymod/state"</c>) so mods don't share a store by accident.
         /// </summary>
         IAslSync GetSync(string id);
+
+        // ---- Spawned objects ----
+
+        /// <summary>
+        /// Find a spawned networked object by its Mirror net id (checks the server's and the client's
+        /// spawn tables, so it works on host or client). Returns the object's <see cref="GameObject"/>, or
+        /// null if nothing with that id is spawned on this peer. Pair it with an <see cref="IAslPlayer.NetId"/>
+        /// or a <see cref="LookHit.NetId"/> you received to resolve the same object on every machine.
+        /// </summary>
+        UnityEngine.GameObject FindObject(uint netId);
     }
 }

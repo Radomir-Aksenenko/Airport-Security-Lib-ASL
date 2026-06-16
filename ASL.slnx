@@ -1,7 +1,8 @@
 <Solution>
   <Folder Name="/samples/">
-    <Project Path="samples/HelloMod/HelloMod.csproj" />
-    <Project Path="samples/FunPanel/FunPanel.csproj" />
+    <!-- HelloMod (template) and FunPanel remain as standalone source under samples/ but are kept out
+         of the solution so the default build deploys only PropHunt. Build them on demand with
+         `dotnet build samples/HelloMod/HelloMod.csproj`. -->
     <Project Path="samples/PropHunt/PropHunt.csproj" />
   </Folder>
   <Folder Name="/src/">

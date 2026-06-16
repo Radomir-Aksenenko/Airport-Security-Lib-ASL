@@ -28,6 +28,12 @@ namespace ASL.Api
         /// <summary>Register controls into ASL's shared in-game menu (toggle with F8).</summary>
         IModMenu Menu { get; }
 
+        /// <summary>On-screen UI helpers (the game's announcement banner).</summary>
+        IAslUi Ui { get; }
+
+        /// <summary>Keyboard input and rebindable, conflict-checked named keybinds.</summary>
+        IAslInput Input { get; }
+
         /// <summary>Read-only networking awareness (host/client/connected, connection count).</summary>
         IAslNet Net { get; }
     }

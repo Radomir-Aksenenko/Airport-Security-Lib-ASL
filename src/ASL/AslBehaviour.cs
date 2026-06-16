@@ -40,12 +40,7 @@ namespace ASL
                 if (down && !_wasToggleDown) menu.Visible = !menu.Visible;
                 _wasToggleDown = down;
 
-                if (menu.Visible)
-                {
-                    // Free the cursor so the menu is clickable during gameplay.
-                    Cursor.visible = true;
-                    Cursor.lockState = CursorLockMode.None;
-                }
+                if (menu.Visible) AslPlugin.MenuUi?.TickBackground();   // scroll the animated backdrop
             }
 
             var bus = AslPlugin.Bus;
@@ -95,10 +90,44 @@ namespace ASL
             // Networking awareness (connection-count changes), polled on the same throttle.
             AslPlugin.Net?.Poll();
 
-            // Try to add the "Mods" button to the main menu (bounded retries after scene changes).
+            // Keep the "Mods" button on the main menu (self-healing; stays out of the in-game pause menu).
             MainMenuInjector.Tick();
             // Re-localize the Mods button if the player switched language.
             MainMenuInjector.PollLanguage();
+        }
+
+        private bool _menuWasVisible;
+
+        // The game's player controller re-locks the cursor every frame during gameplay; LateUpdate runs
+        // after it, so freeing the cursor here is what actually makes the F8 menu clickable in-game
+        // (previously you had to also open the game's pause menu to release the cursor). While the menu
+        // is open we also block player input so the camera doesn't spin as you move to click.
+        private void LateUpdate()
+        {
+            var menu = AslPlugin.Menu;
+            bool visible = menu != null && menu.Visible;
+
+            if (visible)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+                SetLocalInputBlocked(true);
+            }
+            else if (_menuWasVisible)
+            {
+                SetLocalInputBlocked(false);   // restore control once, on close
+            }
+            _menuWasVisible = visible;
+        }
+
+        private static void SetLocalInputBlocked(bool blocked)
+        {
+            try
+            {
+                var lp = MetaPlayer.LocalPlayerInstance;
+                if (lp != null) PlayerControl.SetInputBlocked(lp, blocked);
+            }
+            catch { }
         }
     }
 }

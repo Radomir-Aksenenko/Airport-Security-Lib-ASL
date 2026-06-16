@@ -1,4 +1,5 @@
 using Metater;
+using UnityEngine;
 
 namespace ASL.Api
 {
@@ -34,5 +35,39 @@ namespace ASL.Api
         /// empty for now (a later version sources them from Steam). Never null.
         /// </summary>
         string Name { get; }
+
+        // ---- Look + control. These act live on the underlying game player; the look helper uses the
+        //      local camera, so it is meaningful for the local player. ----
+
+        /// <summary>
+        /// Raycast from the player's camera and report what it hits within <paramref name="maxDistance"/>
+        /// metres (see <see cref="LookHit"/>). Uses the local view, so call it on the local player.
+        /// </summary>
+        LookHit GetLookedAt(float maxDistance = 6f);
+
+        /// <summary>
+        /// Freeze the player in place — stops movement <i>and</i> gravity, so they can hang where they are
+        /// (e.g. against a wall). Idempotent; undo with <see cref="Unfreeze"/>.
+        /// </summary>
+        void Freeze();
+
+        /// <summary>Undo <see cref="Freeze"/> — movement and gravity resume.</summary>
+        void Unfreeze();
+
+        /// <summary>True while frozen by <see cref="Freeze"/>.</summary>
+        bool IsFrozen { get; }
+
+        /// <summary>Teleport the player to a world position.</summary>
+        void Teleport(Vector3 position);
+
+        /// <summary>
+        /// Shrink (or grow) the player's movement collider to <paramref name="radius"/> × <paramref name="height"/>
+        /// — e.g. so a small disguise can fit through small gaps. Originals are remembered; call
+        /// <see cref="ResetCollider"/> to restore. Only affects the local player's own physics.
+        /// </summary>
+        void SetColliderSize(float radius, float height);
+
+        /// <summary>Restore the collider after <see cref="SetColliderSize"/>.</summary>
+        void ResetCollider();
     }
 }

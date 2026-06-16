@@ -2,6 +2,7 @@ using System;
 using ASL.Api;
 using BepInEx.Logging;
 using Il2CppInterop.Runtime;
+using Metater;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -20,23 +21,39 @@ namespace ASL
     {
         private const string CloneName = "ASL_ModsButton";
         private static ManualLogSource _log;
-        private static int _attempts;
         private static GameObject _modsButton;   // the live "Mods" button, for re-localizing
         private static string _lastLang;
 
         public static void Init(ManualLogSource log, IAslEvents events)
         {
             _log = log;
-            _attempts = 12;
-            events.SceneChanged += _ => _attempts = 12;   // re-try when (re)entering the menu
         }
 
+        // Self-healing: called on the throttled poll. The main menu can be rebuilt without a scene-name
+        // change (it's a persistent scene), which is why the button used to vanish after a game — so we
+        // re-inject whenever our button isn't present and we're back on the main menu. The
+        // no-local-player gate keeps us OUT of the in-game pause/settings menu entirely.
         public static void Tick()
         {
-            if (_attempts <= 0) return;
-            _attempts--;
-            try { if (TryInject()) _attempts = 0; }
-            catch (Exception ex) { _log.LogError($"[menu] main-menu inject failed: {ex.Message}"); _attempts = 0; }
+            try
+            {
+                if (ButtonAlive()) return;            // our button is up → nothing to do
+                if (InGame()) return;                 // in a game / pause menu → never inject (keeps it out of there)
+                TryInject();                          // (re)inject once the main menu exists
+            }
+            catch (Exception ex) { _log.LogError($"[menu] main-menu inject failed: {ex.Message}"); }
+        }
+
+        private static bool ButtonAlive()
+        {
+            try { return _modsButton != null && _modsButton.activeInHierarchy; }
+            catch { return false; }
+        }
+
+        private static bool InGame()
+        {
+            try { return MetaPlayer.LocalPlayerInstance != null; }
+            catch { return false; }
         }
 
         private static bool TryInject()
@@ -65,7 +82,7 @@ namespace ASL
             if (!hasPlay || settingsBtn == null) return false;
 
             // Capture a template for the native menu (a separate, stored, deactivated clone).
-            AslPlugin.Ui?.SetTemplate(UnityEngine.Object.Instantiate(settingsBtn.gameObject));
+            AslPlugin.MenuUi?.SetTemplate(UnityEngine.Object.Instantiate(settingsBtn.gameObject));
 
             // Add the visible "Mods" button next to Settings.
             var clone = UnityEngine.Object.Instantiate(settingsBtn.gameObject, settingsBtn.transform.parent);

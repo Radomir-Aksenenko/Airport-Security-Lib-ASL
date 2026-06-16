@@ -23,6 +23,7 @@ namespace ASL
 
         private readonly ManualLogSource _log;
         private readonly MenuManager _registry;
+        private readonly KeybindManager _keys;
 
         private GameObject _template;
         private GameObject _canvasGo;
@@ -32,10 +33,16 @@ namespace ASL
         private bool _built;
         private string _currentMod;
 
-        public NativeMenu(ManualLogSource log, MenuManager registry)
+        // Animated backdrop that mimics the Settings screen's flowing background.
+        private RawImage _animBg;
+        private Vector2 _bgUv, _bgSpeed;
+        private bool _bgReady;
+
+        public NativeMenu(ManualLogSource log, MenuManager registry, KeybindManager keys)
         {
             _log = log;
             _registry = registry;
+            _keys = keys;
             registry.VisibleChanged += OnVisibleChanged;
         }
 
@@ -92,6 +99,10 @@ namespace ASL
             bgrt.anchorMin = Vector2.zero; bgrt.anchorMax = Vector2.one;
             bgrt.offsetMin = Vector2.zero; bgrt.offsetMax = Vector2.zero;
 
+            // Animated, Settings-style backdrop (a scrolling texture). Child of the canvas (not the
+            // panel), so Rebuild — which clears the panel's children — never destroys it.
+            TrySetupAnimatedBackground();
+
             // Centred panel (borrows the Settings sprite). Rows live inside it.
             var panel = new GameObject("Panel");
             panel.transform.SetParent(_canvasGo.transform, false);
@@ -113,6 +124,11 @@ namespace ASL
         private void ApplyPanelStyle()
         {
             if (_panelImg == null) return;
+
+            // If the scrolling backdrop is up, keep the panel transparent so it shows through (like the
+            // Settings screen, where controls sit directly over the moving background).
+            if (_bgReady) { _panelImg.sprite = null; _panelImg.color = new Color(0f, 0f, 0f, 0f); return; }
+
             var sp = UiUtil.SettingsPanelSprite();
             if (sp != null)
             {
@@ -125,6 +141,46 @@ namespace ASL
                 _panelImg.sprite = null;
                 _panelImg.color = new Color(0.04f, 0.04f, 0.05f, 0.97f);
             }
+        }
+
+        // Build a full-screen RawImage that scrolls the Settings background texture. Best-effort: if the
+        // texture isn't found, we simply fall back to the static panel style.
+        private void TrySetupAnimatedBackground()
+        {
+            try
+            {
+                if (!UiUtil.SettingsScrollTexture(out var tex, out var speed) || tex == null) { _bgReady = false; return; }
+
+                var go = new GameObject("ASL_AnimatedBg");
+                go.transform.SetParent(_canvasGo.transform, false);
+                _animBg = go.AddComponent<RawImage>();
+                _animBg.texture = tex;
+                _animBg.color = new Color(1f, 1f, 1f, 0.55f);   // dim it over the dark backdrop for readability
+                _animBg.raycastTarget = false;
+                _animBg.uvRect = new Rect(0f, 0f, 4f, 4f);
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+                rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+                _bgSpeed = speed;
+                _bgUv = Vector2.zero;
+                _bgReady = true;
+                _log.LogInfo("[menu] animated Settings-style backdrop attached.");
+            }
+            catch (Exception ex) { _log.LogWarning($"[menu] animated bg setup failed: {ex.Message}"); _bgReady = false; }
+        }
+
+        /// <summary>Advances the scrolling backdrop one frame. Called while the menu is visible.</summary>
+        public void TickBackground()
+        {
+            if (!_bgReady || _animBg == null) return;
+            try
+            {
+                _bgUv += _bgSpeed * Time.unscaledDeltaTime;
+                var r = _animBg.uvRect;
+                _animBg.uvRect = new Rect(_bgUv.x, _bgUv.y, r.width, r.height);
+            }
+            catch { }
         }
 
         private void Rebuild()
@@ -191,6 +247,17 @@ namespace ASL
                                 }, idx++);
                                 break;
                             }
+                            case KeybindControl kc:
+                            {
+                                GameObject row = null;
+                                row = AddRow(KeybindText(kc.Bind), true, () =>
+                                {
+                                    if (_keys == null) return;
+                                    _keys.BeginRebind(kc.Bind, () => SetRowText(row, KeybindText(kc.Bind)));
+                                    SetRowText(row, $"{kc.Bind.DisplayName}: press a key…  (Esc = cancel)");
+                                }, idx++);
+                                break;
+                            }
                         }
                     }
                 }
@@ -239,6 +306,12 @@ namespace ASL
 
         private static string ToggleText(ToggleControl t) => $"{t.Label}: {(t.Value ? "ON" : "OFF")}";
         private static string SliderText(SliderControl s) => $"{s.Label}: {s.Value:0.##}";
+
+        private static string KeybindText(AslKeybind b)
+        {
+            string key = b.Key == KeyCode.None ? "—" : b.Key.ToString();
+            return $"{b.DisplayName}: [{key}]{(b.HasConflict ? "  (!)" : "")}";
+        }
 
         private static void Step(SliderControl s)
         {

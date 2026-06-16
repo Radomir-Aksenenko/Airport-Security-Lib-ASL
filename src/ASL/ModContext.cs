@@ -13,10 +13,13 @@ namespace ASL
         public IAslEvents Events { get; }
         public IModHooks Hooks { get; }
         public IModMenu Menu { get; }
+        public IAslUi Ui { get; }
+        public IAslInput Input { get; }
         public IAslNet Net { get; }
 
         public ModContext(string modId, string modName, string modDirectory,
-                          ManualLogSource logSource, IAslEvents events, IModHooks hooks, IModMenu menu, IAslNet net)
+                          ManualLogSource logSource, IAslEvents events, IModHooks hooks, IModMenu menu,
+                          IAslUi ui, IAslInput input, IAslNet net)
         {
             ModId = modId;
             ModName = modName;
@@ -25,6 +28,8 @@ namespace ASL
             Events = events;
             Hooks = hooks;
             Menu = menu;
+            Ui = ui;
+            Input = input;
             Net = net;
         }
     }
