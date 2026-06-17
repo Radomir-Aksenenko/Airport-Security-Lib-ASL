@@ -75,12 +75,13 @@ namespace ASL
         }
 
         // Block/unblock all player input (used while the mod menu is open so the camera doesn't spin and
-        // the player doesn't move while you click). Orthogonal to Freeze (different flag).
-        public static void SetInputBlocked(MetaPlayer mp, bool blocked)
+        // the player doesn't move while you click). Orthogonal to Freeze (different flag). Returns true if
+        // the controller was found and the flag was applied (so callers can retry until a player exists).
+        public static bool SetInputBlocked(MetaPlayer mp, bool blocked)
         {
             var c = Controller(mp);
-            if (c == null) return;
-            try { c.debugBlockInput = blocked; } catch { }
+            if (c == null) return false;
+            try { c.debugBlockInput = blocked; return true; } catch { return false; }
         }
 
         // ---- teleport ----

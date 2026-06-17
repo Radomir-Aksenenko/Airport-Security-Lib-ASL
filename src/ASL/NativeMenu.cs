@@ -64,7 +64,12 @@ namespace ASL
                 if (visible)
                 {
                     _currentMod = null;
-                    if (!_built) Build(); else Rebuild();
+                    if (!_built) Build();
+                    else
+                    {
+                        if (!_bgReady) TrySetupAnimatedBackground();   // re-resolve: the menu bg may not have existed at Build()
+                        Rebuild();
+                    }
                     if (_canvasGo != null) _canvasGo.SetActive(true);
                 }
                 else if (_canvasGo != null)
@@ -149,18 +154,25 @@ namespace ASL
         {
             try
             {
+                UiUtil.LogScrollers(_log);   // one-time diagnostic: which scrollers are live + conveyor flags
+
                 if (!UiUtil.SettingsScrollTexture(out var tex, out var speed) || tex == null) { _bgReady = false; return; }
 
-                var go = new GameObject("ASL_AnimatedBg");
-                go.transform.SetParent(_canvasGo.transform, false);
-                _animBg = go.AddComponent<RawImage>();
+                if (_animBg == null)
+                {
+                    var go = new GameObject("ASL_AnimatedBg");
+                    go.transform.SetParent(_canvasGo.transform, false);
+                    go.transform.SetSiblingIndex(1);   // above the backdrop, below the panel
+                    _animBg = go.AddComponent<RawImage>();
+                    _animBg.raycastTarget = false;
+                    var rt = go.GetComponent<RectTransform>();
+                    rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+                    rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+                }
                 _animBg.texture = tex;
-                _animBg.color = new Color(1f, 1f, 1f, 0.55f);   // dim it over the dark backdrop for readability
-                _animBg.raycastTarget = false;
-                _animBg.uvRect = new Rect(0f, 0f, 4f, 4f);
-                var rt = go.GetComponent<RectTransform>();
-                rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-                rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+                _animBg.color = new Color(1f, 1f, 1f, 0.5f);   // dim it over the dark backdrop for readability
+                try { tex.wrapMode = TextureWrapMode.Repeat; } catch { }   // so uvRect tiling scrolls cleanly
+                _animBg.uvRect = new Rect(0f, 0f, 2f, 2f);
 
                 _bgSpeed = speed;
                 _bgUv = Vector2.zero;

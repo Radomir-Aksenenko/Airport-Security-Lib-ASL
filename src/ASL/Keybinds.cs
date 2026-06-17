@@ -173,6 +173,8 @@ namespace ASL
                 KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow,
                 KeyCode.Space, KeyCode.LeftShift, KeyCode.LeftControl,
                 KeyCode.Mouse0, KeyCode.Mouse1, KeyCode.Escape, KeyCode.Tab,
+                // Known game actions (confirmed in-game): F = first/third-person camera, G = surrender.
+                KeyCode.F, KeyCode.G, KeyCode.E, KeyCode.R, KeyCode.Q,
             };
             foreach (var k in r) _reserved.Add(k);
         }

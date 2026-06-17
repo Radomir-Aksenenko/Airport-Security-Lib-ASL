@@ -25,6 +25,7 @@ namespace ASL
                 {
                     var sc = o != null ? o.TryCast<MaterialOffsetScroller>() : null;
                     if (sc == null) continue;
+                    if (IsConveyor(sc)) continue;   // belts carry a scroller too — skip them (component-based, not by name)
 
                     Material mat = null;
                     try { mat = sc.targetMaterial; } catch { }
@@ -48,6 +49,60 @@ namespace ASL
             }
             catch { }
             return false;
+        }
+
+        // True if this scroller sits on (or under) an in-world conveyor belt — those carry a
+        // MaterialOffsetScroller too, and there is no separate menu scene, so we must reject them.
+        private static bool IsConveyor(MaterialOffsetScroller sc)
+        {
+            try
+            {
+                if (sc.GetComponentInParent(Il2CppType.Of<ConveyorMover>()) != null) return true;
+                if (sc.GetComponentInParent(Il2CppType.Of<ConveyorInteractable>()) != null) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool _scrollersLogged;
+
+        /// <summary>One-time diagnostic: log every MaterialOffsetScroller (transform path + conveyor flag)
+        /// plus the MaterialOffsetController count, so the in-game log tells us which object actually drives
+        /// the menu background (the menu may animate via the Controller, not the Scroller).</summary>
+        public static void LogScrollers(BepInEx.Logging.ManualLogSource log)
+        {
+            if (_scrollersLogged || log == null) return;
+            _scrollersLogged = true;
+            try
+            {
+                var arr = Resources.FindObjectsOfTypeAll(Il2CppType.Of<MaterialOffsetScroller>());
+                int n = 0;
+                if (arr != null)
+                    foreach (var o in arr)
+                    {
+                        var sc = o != null ? o.TryCast<MaterialOffsetScroller>() : null;
+                        if (sc == null) continue;
+                        n++;
+                        log.LogInfo($"[menu] scroller '{PathOf(sc.transform)}' conveyor={IsConveyor(sc)}");
+                    }
+                log.LogInfo($"[menu] MaterialOffsetScroller live count={n}");
+                var ctrl = Resources.FindObjectsOfTypeAll(Il2CppType.Of<MaterialOffsetController>());
+                int m = 0; if (ctrl != null) foreach (var c in ctrl) if (c != null) m++;
+                log.LogInfo($"[menu] MaterialOffsetController live count={m}");
+            }
+            catch (Exception ex) { log.LogWarning($"[menu] scroller diag failed: {ex.Message}"); }
+        }
+
+        private static string PathOf(Transform t)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                var cur = t;
+                while (cur != null) { if (sb.Length > 0) sb.Insert(0, '/'); sb.Insert(0, cur.name); cur = cur.parent; }
+                return sb.ToString();
+            }
+            catch { return "?"; }
         }
 
         /// <summary>

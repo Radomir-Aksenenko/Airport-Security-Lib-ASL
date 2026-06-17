@@ -97,11 +97,15 @@ namespace ASL
         }
 
         private bool _menuWasVisible;
+        private bool _registeredCursorUser;
+        private bool _inputBlocked;
 
-        // The game's player controller re-locks the cursor every frame during gameplay; LateUpdate runs
-        // after it, so freeing the cursor here is what actually makes the F8 menu clickable in-game
-        // (previously you had to also open the game's pause menu to release the cursor). While the menu
-        // is open we also block player input so the camera doesn't spin as you move to click.
+        // Freeing the cursor for the F8 menu the WRONG way (writing Cursor.lockState ourselves) loses a
+        // per-frame race: the game's cursor is owned by the singleton Metater.MetaCursor, whose own
+        // LateUpdate re-asserts the state from its CursorUsers set. So we do it the game's OWN way —
+        // register this behaviour as a "cursor user" while the menu is open (exactly like the game's
+        // RequireCursor component) and let MetaCursor free the cursor. We also block player look/move so
+        // the camera doesn't spin while you use the menu.
         private void LateUpdate()
         {
             var menu = AslPlugin.Menu;
@@ -109,25 +113,47 @@ namespace ASL
 
             if (visible)
             {
-                Cursor.visible = true;
-                Cursor.lockState = CursorLockMode.None;
-                SetLocalInputBlocked(true);
+                if (!_registeredCursorUser)
+                {
+                    try
+                    {
+                        var mc = MetaCursor.Instance;                 // null on the main menu (cursor already free there)
+                        var users = mc != null ? mc.CursorUsers : null;
+                        if (users != null) { users.Add(this); _registeredCursorUser = true; }
+                    }
+                    catch { }
+                }
+                if (SetLocalInputBlocked(true)) _inputBlocked = true;
             }
-            else if (_menuWasVisible)
+            else
             {
-                SetLocalInputBlocked(false);   // restore control once, on close
+                UnregisterCursorUser();
+                if (_inputBlocked && SetLocalInputBlocked(false)) _inputBlocked = false;   // retry until a player exists
             }
             _menuWasVisible = visible;
         }
 
-        private static void SetLocalInputBlocked(bool blocked)
+        private void UnregisterCursorUser()
+        {
+            if (!_registeredCursorUser) return;
+            try { MetaCursor.Instance?.CursorUsers?.Remove(this); } catch { }
+            _registeredCursorUser = false;
+        }
+
+        // Safety: never leave ourselves registered (a stale entry could wedge the cursor free forever).
+        private void OnDisable() => UnregisterCursorUser();
+        private void OnDestroy() => UnregisterCursorUser();
+
+        // Returns true if the local controller was found and the flag was set — callers retry until then.
+        private static bool SetLocalInputBlocked(bool blocked)
         {
             try
             {
                 var lp = MetaPlayer.LocalPlayerInstance;
-                if (lp != null) PlayerControl.SetInputBlocked(lp, blocked);
+                if (lp == null) return false;
+                return PlayerControl.SetInputBlocked(lp, blocked);
             }
-            catch { }
+            catch { return false; }
         }
     }
 }

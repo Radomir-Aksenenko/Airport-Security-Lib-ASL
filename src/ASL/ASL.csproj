@@ -95,6 +95,10 @@
       <HintPath>$(GamePath)\BepInEx\interop\Il2CppSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Il2CppSystem.Core">
+      <HintPath>$(GamePath)\BepInEx\interop\Il2CppSystem.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(GamePath)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
