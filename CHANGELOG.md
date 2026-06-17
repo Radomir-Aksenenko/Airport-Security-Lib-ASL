@@ -44,6 +44,6 @@ First public release. Everything below is implemented and verified in-game.
 - **Samples** — `HelloMod` (DLL template), `FunPanel` (F8 menu driving the player), `PropHunt` (a full
   multiplayer Prop Hunt game mode), plus `ExampleScriptMod` and `ExampleContentMod`.
 - **Documentation** — getting started, mod types, manifest reference, API reference, building from
-  source, networking, troubleshooting, and a Nexus publishing guide.
+  source, networking, and troubleshooting.
 
 [0.1.0]: https://github.com/Radomir-Aksenenko/Airport-Security-Lib-ASL/releases/tag/v0.1.0

@@ -27,7 +27,6 @@ Airport Security Sucks/
 - [Building ASL from source](docs/building.md)
 - [Networking (Mirror)](docs/networking.md) — `IAslNet` awareness + the message transport (`Send`/`Subscribe`)
 - [Troubleshooting & IL2CPP notes](docs/troubleshooting.md)
-- [Publishing to Nexus Mods](docs/publishing-nexus.md) — uploading ASL and PropHunt
 
 ## What works today
 

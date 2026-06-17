@@ -175,9 +175,11 @@ Notes:
 - `ctx.Log` — a per-mod logger (`Info` / `Warning` / `Error`), tagged with your mod name.
 - `ctx.ModDirectory` — absolute path to your mod folder; load extra assets from here.
 - `ctx.ModId` / `ctx.ModName` — your manifest identity.
-- `ctx.Events` — the [event bus](api-reference.md#events).
-- `ctx.Hooks` — [opt-in Harmony hooks](api-reference.md#hooks).
+- `ctx.Events` — the [event bus](api-reference.md#events): frame tick, scene and local-player changes.
+- `ctx.Hooks` — [opt-in Harmony hooks](api-reference.md#hooks) on game methods.
 - `ctx.Menu` — the [in-game menu](api-reference.md#menu) (F8): register toggles, buttons, sliders.
-- `ctx.Net` — [networking awareness](networking.md): host/client/connected state, connection changes.
+- `ctx.Ui` — [on-screen UI](api-reference.md#on-screen-ui): the game's announcement banner.
+- `ctx.Input` — [input & keybinds](api-reference.md#input--keybinds): rebindable named keys plus raw key queries.
+- `ctx.Net` — [networking](networking.md): host/client state, player identity, a host-authoritative synced store, and a host↔client message transport.
 
 See the full [API reference](api-reference.md).

@@ -187,7 +187,7 @@ private IAslKeybind _disguise;
 
 public override void OnLoad(IModContext ctx)
 {
-    _disguise = ctx.Input.RegisterKey("disguise", "Disguise / undisguise", KeyCode.G);
+    _disguise = ctx.Input.RegisterKey("disguise", "Disguise / undisguise", KeyCode.B);
 
     _disguise.Pressed += () => ToggleDisguise();                        // event style, or…
     ctx.Events.Update += () => { if (_disguise.WasPressed) ToggleDisguise(); };  // …poll in Update
