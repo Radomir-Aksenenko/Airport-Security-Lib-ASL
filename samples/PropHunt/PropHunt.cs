@@ -24,8 +24,11 @@ namespace PropHunt
     public sealed class PropHunt : AslMod
     {
         private const string StoreId = "com.asl.prophunt/state";
-        private const float CatchRange = 2.5f;
+        private const string CatchChannel = "com.asl.prophunt/catch";
+        private const string DisguiseChannel = "com.asl.prophunt/disguise";
+        private const float HitRange = 3.5f;        // melee reach: the hunter must be this close AND facing the prop
         private const float RoundSeconds = 150f;
+        private const float IntermissionSeconds = 6f;   // pause between rounds before roles swap
 
         // A prop the player can plausibly become is human-scale; reject anything outside this range.
         private const float MinPropSize = 0.05f;
@@ -42,6 +45,8 @@ namespace PropHunt
         private float _roundEndsAt;
         private int _lastMilestone;
         private int _msgCounter;
+        private bool _autoNext;              // a round just ended; auto-start the next with roles swapped
+        private float _intermissionEndsAt;
 
         // local collider target while disguised (re-applied each frame); <0 = not disguised
         private float _propRadius = -1f, _propHeight = -1f;
@@ -54,10 +59,14 @@ namespace PropHunt
             _ctx = ctx;
             _state = ctx.Net.GetSync(StoreId);
             _state.Changed += OnStateChanged;
+            ctx.Net.Subscribe(CatchChannel, OnCatchMessage);       // host receives "I hit a prop" from remote hunters
+            ctx.Net.Subscribe(DisguiseChannel, OnDisguiseRequest); // host applies a remote prop's disguise (clients can't Set sync)
 
             // Named keybinds: they appear under "ASL Prop Hunt" in the F8 menu and are rebindable.
-            _disguiseKey = ctx.Input.RegisterKey("disguise", "Disguise / undisguise", KeyCode.G);
-            _freezeKey = ctx.Input.RegisterKey("freeze", "Freeze in place", KeyCode.F);
+            // Defaults are deliberately keys the game does NOT use (G = surrender, F = camera toggle).
+            // Rebind them in the F8 menu under "ASL Prop Hunt".
+            _disguiseKey = ctx.Input.RegisterKey("disguise", "Disguise / undisguise", KeyCode.B);
+            _freezeKey = ctx.Input.RegisterKey("freeze", "Freeze in place", KeyCode.N);
 
             ctx.Menu.AddLabel("Aim at an object and press the disguise key to become it.");
             ctx.Menu.AddButton("Start Prop Hunt (host)", StartGame);
@@ -84,6 +93,7 @@ namespace PropHunt
             {
                 if (_disguiseKey != null && _disguiseKey.WasPressed) ToggleLookDisguise();
                 if (_freezeKey != null && _freezeKey.WasPressed) ToggleFreeze();
+                TryHunterCatchInput();   // hunter catches by hitting (left-click) a prop in front
             }
 
             // keep each disguise glued to its player, sitting on the floor
@@ -113,8 +123,13 @@ namespace PropHunt
             var me = _ctx.Net.LocalPlayer;
             if (me == null) { _ctx.Ui.Announce("Get into a level first."); return; }
 
-            string key = "d:" + me.NetId;
-            if (!string.IsNullOrEmpty(_state.Get(key))) { _state.Set(key, ""); _ctx.Ui.Announce("Back to normal."); return; }
+            // The hunter is the guard — they seek and catch, they don't hide.
+            if (_state.Get("active") == "1" && me.NetId == HunterId()) { _ctx.Ui.Announce("You're the guard — hit props to catch them!"); return; }
+
+            // A real chosen disguise (n:/p:) toggles back to normal. The round-start "box" placeholder does
+            // NOT — pressing the key while you're a box turns you into whatever you're looking at.
+            string cur = _state.Get("d:" + me.NetId) ?? "";
+            if (cur.StartsWith("n:") || cur.StartsWith("p:")) { SetMyDisguise(""); _ctx.Ui.Announce("Back to normal."); return; }
 
             string value = "box";
             string what = "box";
@@ -126,8 +141,33 @@ namespace PropHunt
                 else { var path = PathOf(look.Transform); if (path != null) value = "p:" + path; }   // static object -> name path
             }
 
-            _state.Set(key, value);
-            _ctx.Ui.Announce(value == "box" ? "You're a box." : $"You are now a '{what}'!");
+            SetMyDisguise(value);
+            _ctx.Ui.Announce(value == "box" ? "Look right at an object to become it." : $"You are now a '{what}'!");
+        }
+
+        // Set MY disguise. Only the host can write the synced store, so a client routes the request to the
+        // host, which applies it (this is why a prop on a client used to be stuck as a grey box).
+        private void SetMyDisguise(string value)
+        {
+            var me = _ctx.Net.LocalPlayer;
+            if (me == null) return;
+            if (_ctx.Net.IsServer) _state.Set("d:" + me.NetId, value ?? "");
+            else { try { _ctx.Net.SendToServer(DisguiseChannel, System.Text.Encoding.UTF8.GetBytes(value ?? "")); } catch { } }
+        }
+
+        // Host: a remote prop asked to (un)disguise. Apply it for whoever sent it (netId from the sender).
+        private void OnDisguiseRequest(AslNetMessage msg)
+        {
+            if (!_ctx.Net.IsServer || msg == null) return;
+            try
+            {
+                var sender = _ctx.Net.GetPlayer(msg.SenderConnectionId);
+                if (sender == null) return;
+                if (_state.Get("active") == "1" && sender.NetId == HunterId()) return;   // the guard can't hide
+                string value = (msg.Data != null && msg.Data.Length > 0) ? System.Text.Encoding.UTF8.GetString(msg.Data) : "";
+                _state.Set("d:" + sender.NetId, value);
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: disguise request failed: {ex.Message}"); }
         }
 
         // ---- freeze (real prop-hunt "stick in place"), via the library ----
@@ -232,7 +272,28 @@ namespace PropHunt
                 }
             }
             catch (Exception ex) { _ctx.Log.Warning($"PropHunt: fallback material failed: {ex.Message}"); }
+
+            // If Shader.Find came up empty (shaders not name-loadable in this build), borrow a material
+            // from any live scene renderer — guaranteed to have a valid shader, so the box is never magenta.
+            if (_fallbackMat == null) _fallbackMat = BorrowSceneMaterial();
             return _fallbackMat;
+        }
+
+        private Material BorrowSceneMaterial()
+        {
+            try
+            {
+                var rends = Resources.FindObjectsOfTypeAll(Il2CppType.Of<MeshRenderer>());
+                if (rends != null)
+                    foreach (var c in rends)
+                    {
+                        var r = c != null ? c.TryCast<MeshRenderer>() : null;
+                        var m = r != null ? r.sharedMaterial : null;
+                        if (m != null && m.shader != null) { try { if (!m.shader.name.Contains("InternalErrorShader")) return m; } catch { } }
+                    }
+            }
+            catch (Exception ex) { _ctx.Log.Warning($"PropHunt: borrow material failed: {ex.Message}"); }
+            return null;
         }
 
         private GameObject MakeBox(MetaPlayer mp)
@@ -431,71 +492,162 @@ namespace PropHunt
 
         // ---- game mode (host-authoritative) ----
 
-        private void StartGame()
+        private void StartGame() => StartRound(false);   // menu button: start a fresh game
+
+        private void StartRound(bool rotate)
         {
             if (!_ctx.Net.IsServer) { _ctx.Ui.Announce("Only the host can start Prop Hunt."); return; }
             var players = _ctx.Net.Players;
             if (players.Count == 0) { _ctx.Ui.Announce("No players in the session."); return; }
 
-            uint hunter = players[_frame % players.Count].NetId;
-            _state.Set("hunter", hunter.ToString());
+            uint guard = PickGuard(players, rotate);
+            _state.Set("hunter", guard.ToString());
             _state.Set("found", "");
             _state.Set("active", "1");
-            foreach (var p in players) _state.Set("d:" + p.NetId, p.NetId == hunter ? "" : "box");
+            foreach (var p in players) _state.Set("d:" + p.NetId, p.NetId == guard ? "" : "box");
 
+            _autoNext = false;
             _roundEndsAt = Now() + RoundSeconds;
             _lastMilestone = int.MaxValue;
             int propCount = players.Count - 1;
-            HostAnnounce($"Prop Hunt! Hunter: {NameOf(hunter)}. {propCount} prop(s) hiding. {(int)RoundSeconds}s.");
+            HostAnnounce($"Prop Hunt! Guard: {NameOf(guard)}. {propCount} prop(s) hiding. {(int)RoundSeconds}s.");
+        }
+
+        // Choose the round's guard. On rotation, the NEXT player after the previous guard takes over — a
+        // straight swap for two players, round-robin for more.
+        private uint PickGuard(IReadOnlyList<IAslPlayer> players, bool rotate)
+        {
+            if (rotate)
+            {
+                uint prev = HunterId();
+                for (int i = 0; i < players.Count; i++)
+                    if (players[i].NetId == prev) return players[(i + 1) % players.Count].NetId;
+            }
+            return players[_frame % players.Count].NetId;
         }
 
         private void StopGame()
         {
             if (!_ctx.Net.IsServer) return;
+            _autoNext = false;
             _state.Set("active", "0");
             foreach (var p in _ctx.Net.Players) _state.Set("d:" + p.NetId, "");
         }
 
         private void HostGameTick()
         {
-            if (_state.Get("active") != "1") return;
-
-            uint hunter = ParseId(_state.Get("hunter"));
-            var hp = PlayerByNetId(hunter);
-            var found = ParseIds(_state.Get("found"));
-
-            if (hp != null)
+            if (_state.Get("active") == "1")
             {
-                Vector3 hpos;
-                bool haveHpos = true;
-                try { hpos = hp.transform.position; } catch { hpos = Vector3.zero; haveHpos = false; }
-                if (haveHpos)
-                {
-                    int props = 0;
-                    foreach (var p in _ctx.Net.Players)
-                    {
-                        if (p.NetId == hunter) continue;
-                        props++;
-                        if (found.Contains(p.NetId) || p.Player == null) continue;
-                        Vector3 pos; try { pos = p.Player.transform.position; } catch { continue; }
-                        if (Vector3.Distance(hpos, pos) <= CatchRange)
-                        {
-                            found.Add(p.NetId);
-                            _state.Set("found", JoinIds(found));
-                            _state.Set("d:" + p.NetId, "");
-                            HostAnnounce($"{NameOf(p.NetId)} was found! {Math.Max(0, props - found.Count)} left.");
-                            break;
-                        }
-                    }
-                    if (props > 0 && found.Count >= props) { _state.Set("active", "0"); HostAnnounce("Hunter wins - all props found!"); return; }
-                }
+                // Catching is hit-based (see HostProcessCatch); the tick only runs the win/timer checks.
+                uint hunter = HunterId();
+                var found = ParseIds(_state.Get("found"));
+                int props = 0; foreach (var p in _ctx.Net.Players) if (p.NetId != hunter) props++;
+                if (props > 0 && found.Count >= props) { EndRound("Guard wins - all props caught!"); return; }
+
+                int left = (int)Math.Ceiling(_roundEndsAt - Now());
+                if (left <= 0) { EndRound("Time's up - props win!"); return; }
+                int bucket = left <= 10 ? left : (left <= 30 ? 30 : (left <= 60 ? 60 : 999));
+                if (bucket < _lastMilestone) { _lastMilestone = bucket; if (bucket <= 60) HostAnnounce($"{left}s left."); }
+                return;
             }
 
-            int left = (int)Math.Ceiling(_roundEndsAt - Now());
-            if (left <= 0) { _state.Set("active", "0"); HostAnnounce("Time's up - props win!"); return; }
-            int bucket = left <= 10 ? left : (left <= 30 ? 30 : (left <= 60 ? 60 : 999));
-            if (bucket < _lastMilestone) { _lastMilestone = bucket; if (bucket <= 60) HostAnnounce($"{left}s left."); }
+            // Between rounds: once the break is over, auto-start the next round with roles swapped.
+            if (_autoNext && Now() >= _intermissionEndsAt) { _autoNext = false; StartRound(true); }
         }
+
+        // End the round: clear disguises (everyone back to normal for the break) and queue the next round
+        // with roles swapped (guard <-> props).
+        private void EndRound(string message)
+        {
+            _state.Set("active", "0");
+            foreach (var p in _ctx.Net.Players) _state.Set("d:" + p.NetId, "");
+            HostAnnounce(message);
+            if (_ctx.Net.Players.Count >= 2)
+            {
+                _autoNext = true;
+                _intermissionEndsAt = Now() + IntermissionSeconds;
+                HostAnnounce($"Roles swap — next round in {(int)IntermissionSeconds}s.");
+            }
+        }
+
+        // ---- catching by hitting (the hunter left-clicks a prop in front of them) ----
+
+        // Local hunter: on a swing (left-click), pick the prop you're facing within reach and report it.
+        private void TryHunterCatchInput()
+        {
+            if (_state.Get("active") != "1") return;
+            var me = _ctx.Net.LocalPlayer;
+            if (me == null || me.NetId != HunterId()) return;            // only the hunter (guard) catches
+            if (!_ctx.Input.GetKeyDown(KeyCode.Mouse0)) return;          // must actually hit (left-click / attack)
+
+            uint target = FindHitProp(me.NetId);
+            if (target == 0) return;
+            if (_ctx.Net.IsServer) HostProcessCatch(target);            // host hunter: resolve directly
+            else { try { _ctx.Net.SendToServer(CatchChannel, BitConverter.GetBytes(target)); } catch { } }
+        }
+
+        // The prop the hunter is facing within melee reach. Distance is from the hunter's BODY (not the
+        // camera) so a third-person camera sitting metres behind the player doesn't push every prop out of
+        // range; the camera forward is used only for the "facing" check.
+        private uint FindHitProp(uint hunterNetId)
+        {
+            try
+            {
+                var me = _ctx.Net.LocalPlayer;
+                var mp = me != null ? me.Player : null;
+                if (mp == null) return 0;
+                Vector3 hpos; try { hpos = mp.transform.position; } catch { return 0; }
+                var cam = Camera.main;
+                Vector3 fwd = cam != null ? cam.transform.forward : mp.transform.forward;
+                var found = ParseIds(_state.Get("found"));
+                uint best = 0; float bestDot = 0.2f;   // ~78-degree cone in front
+                foreach (var p in _ctx.Net.Players)
+                {
+                    if (p.NetId == hunterNetId || found.Contains(p.NetId) || p.Player == null) continue;
+                    Vector3 pos; try { pos = p.Player.transform.position; } catch { continue; }
+                    Vector3 to = pos - hpos; float d = to.magnitude;
+                    if (d > HitRange || d < 0.01f) continue;
+                    float dot = Vector3.Dot(fwd, to / d);
+                    if (dot > bestDot) { bestDot = dot; best = p.NetId; }
+                }
+                return best;
+            }
+            catch { return 0; }
+        }
+
+        // Host receives a remote hunter's hit report.
+        private void OnCatchMessage(AslNetMessage msg)
+        {
+            if (!_ctx.Net.IsServer) return;
+            try { if (msg != null && msg.Data != null && msg.Data.Length >= 4) HostProcessCatch(BitConverter.ToUInt32(msg.Data, 0)); } catch { }
+        }
+
+        // Host-authoritative: validate the hit (round active, target is an un-caught prop, hunter is near) and catch.
+        private void HostProcessCatch(uint propNetId)
+        {
+            if (!_ctx.Net.IsServer || _state.Get("active") != "1") return;
+            uint hunter = HunterId();
+            if (propNetId == 0 || propNetId == hunter) return;
+
+            var found = ParseIds(_state.Get("found"));
+            if (found.Contains(propNetId)) return;
+
+            MetaPlayer prop = PlayerByNetId(propNetId), hp = PlayerByNetId(hunter);
+            if (prop == null || hp == null) return;
+            Vector3 ppos, hpos;
+            try { ppos = prop.transform.position; hpos = hp.transform.position; } catch { return; }
+            float dist = Vector3.Distance(ppos, hpos);
+            if (dist > HitRange + 1.5f) return;   // server re-check, lenient for lag
+
+            found.Add(propNetId);
+            int props = 0; foreach (var p in _ctx.Net.Players) if (p.NetId != hunter) props++;
+            _state.Set("found", JoinIds(found));
+            _state.Set("d:" + propNetId, "");
+            HostAnnounce($"{NameOf(propNetId)} was caught! {Math.Max(0, props - found.Count)} left.");
+            if (props > 0 && found.Count >= props) EndRound("Guard wins - all props caught!");
+        }
+
+        private uint HunterId() => ParseId(_state.Get("hunter"));
 
         private void HostAnnounce(string text)
         {
@@ -510,7 +662,7 @@ namespace PropHunt
                 uint hunter = ParseId(_state.Get("hunter"));
                 var me = _ctx.Net.LocalPlayer;
                 if (me != null)
-                    _ctx.Ui.Announce(me.NetId == hunter ? "You are the HUNTER - walk into props to find them!" : "You are a PROP - aim at an object and press the disguise key!");
+                    _ctx.Ui.Announce(me.NetId == hunter ? "You are the GUARD - left-click to hit props and catch them!" : "You are a PROP - aim at an object and press the disguise key to hide!");
             }
             else if (key == "msg")
             {

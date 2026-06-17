@@ -3,7 +3,7 @@
   "name": "ASL Prop Hunt",
   "version": "1.0.0",
   "author": "ASL",
-  "description": "A new multiplayer game mode: Prop Hunt. Props are disguised as boxes (their model is hidden and a prop shown on every client); the hunter finds them by getting close. Built on ASL synced state + identity + transport.",
+  "description": "A new multiplayer game mode: Prop Hunt. Props disguise as objects (their model is hidden and the prop shown on every client); the guard hunts them down and catches them by hitting them (left-click). Rounds run on a timer and roles swap each round. Built on ASL synced state + identity + transport.",
   "type": "dll",
   "entry": "PropHunt.dll"
 }
