@@ -157,9 +157,8 @@ foreach (var kv in state.All) { /* ... */ }
 ```
 
 `Set` is **host-only** (ignored on a client). Values are strings — pack numbers/JSON yourself if you
-need more. `Changed` runs on the **main thread**. Because it rides the message transport, the host→
-client replication carries the same send caveat as everything above (confirmed once a real two-peer
-round trip is logged); the local get/set/`Changed` behaviour works regardless.
+need more. `Changed` runs on the **main thread**. It rides the message transport, so host→client
+replication is verified in-game (PropHunt replicates every player's disguise through this store).
 
 ## How it works
 
@@ -202,27 +201,25 @@ entity traffic effectively impossible. The intercept is installed **lazily** on 
 
 ## Verification status
 
-> **Receive confirmed; send delivery confirmed; full round-trip pending one final two-peer PASS.**
-> Receive is verified on real traffic — server-side in a solo host and client-side against a real
-> remote host. **Send delivery is now confirmed too:** in a real two-peer session our host→client
-> packet physically arrived at the client (its bytes — magic `ASL1`, channel, payload — showed up in
-> the client's Mirror read). That same test exposed a **wire-format bug** (we wrote `EntityStateMessage.netId`
-> as a fixed 4-byte uint, but the game reads it as a `CompressVarUInt`), which threw
-> `EndOfStreamException` on deserialize. **Fixed** (netId now var-compressed); an in-game **wire
-> self-check** round-trips a batch through Mirror's own reader and passes (`NET WIRE SELF-CHECK: PASS`,
-> netId `0xA51A51A5`). What's left is to log the end-to-end `NET TEST: PASS` between two peers running
-> the fixed build. Treat the round trip as **all-but-confirmed**.
+> **Confirmed in-game: full two-peer round trip works (`NET TEST: PASS`).**
+> Receive was verified on real traffic (server-side in a solo host, client-side against a real remote
+> host); send delivery was verified by a host→client packet physically arriving at a second peer. An
+> early test exposed a **wire-format bug** — we wrote `EntityStateMessage.netId` as a fixed 4-byte
+> uint, but the game reads it as a `CompressVarUInt`, which threw `EndOfStreamException` on
+> deserialize. After fixing it (netId now var-compressed), a real two-peer session logs the end-to-end
+> **`NET TEST: PASS — client↔host round trip confirmed`**. PropHunt — a full multiplayer game mode —
+> runs entirely on this transport and its synced store.
 >
 > **Why a single machine isn't enough:** a solo host's transport does not echo injected packets back
 > to itself (Steam P2P to the same account has no loopback; the game delivers its own host↔client
-> messages over an in-memory path that can't be injected into). So a solo session can't prove the
-> round trip either way.
+> messages over an in-memory path that can't be injected into). So a solo session can't exercise the
+> round trip — you need two peers.
 >
-> **How to verify:** start a session on one machine/account and have a **second** peer (another
-> machine, another Steam account, or a friend) join via the in-game join code, with the sample
-> `HelloMod` present on both. The joining client auto-pings the host; watch `BepInEx\LogOutput.log`
-> on the client for **`NET TEST: PASS — client↔host round trip confirmed`** (or `FAIL`). To capture
-> low-level wire diagnostics during such a test, set `NetTransport.Diagnostics = true` and rebuild.
+> **Reproducing the check:** start a session on one machine/account and have a **second** peer
+> (another machine, another Steam account, or a friend) join via the in-game join code, with the
+> sample `HelloMod` present on both. The joining client auto-pings the host; watch
+> `BepInEx\LogOutput.log` on the client for `NET TEST: PASS — client↔host round trip confirmed`. To
+> capture low-level wire diagnostics, set `NetTransport.Diagnostics = true` and rebuild.
 
 ## Limits & notes
 

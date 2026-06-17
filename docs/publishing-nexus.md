@@ -62,8 +62,9 @@ from it (or re-zip `dist/stage-mp` after removing `mods\PropHunt`).
 1. **Mods → Upload mod** on the same game page.
 2. **Category:** *Gameplay* / *Multiplayer*.
 3. **Name:** `PropHunt (ASL)`. **Version:** `1.0.0` (matches `samples/PropHunt/manifest.json`).
-4. **Description:** the game mode + controls (look + **G** to disguise, **F** to freeze; rebindable in the
-   F8 Mods menu), that it's **multiplayer (2+ players)**, and that it **requires ASL**.
+4. **Description:** the game mode + controls (props: look at an object and press **B** to disguise,
+   **N** to freeze; guard: **left-click** to catch — all rebindable in the F8 Mods menu), that it's
+   **multiplayer (2+ players)** with rounds and swapping roles, and that it **requires ASL**.
 5. **Requirements → Nexus requirements:** add your **ASL** mod page as a required mod. (Players must
    install ASL first.)
 6. **Files tab:**

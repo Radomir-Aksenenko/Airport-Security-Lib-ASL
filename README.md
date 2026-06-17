@@ -14,8 +14,9 @@ Airport Security Sucks/
     └── MyCodeMod/         manifest.json + MyCodeMod.dll  (compiled C#)
 ```
 
-> **Status:** early but functional. The loader, the three mod tiers, the event bus and the opt-in
-> hook system are all implemented and verified in-game. The public API is not yet frozen (pre-1.0).
+> **Status:** early but functional. The loader, the three mod tiers, the event bus, the opt-in hook
+> system, and the full networking stack (identity, synced state, message transport) are all
+> implemented and verified in-game. The public API is not yet frozen (pre-1.0).
 
 ## Quick links
 
@@ -40,13 +41,13 @@ Airport Security Sucks/
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
 | In-game menu | ✅ | `IModMenu` — toggles / buttons / sliders in a shared overlay; opened with **F8** or the **Mods** button ASL adds to the main menu |
 | On-screen UI | ✅ | `IAslUi.Announce(text, secs)` — the game's own announcement banner (used in-game) |
-| Input & **keybinds** | 🧪 | `IAslInput.RegisterKey(id, name, default)` → rebindable named keys that auto-appear in the F8 menu, persist to `BepInEx/config/ASL.Keybinds.cfg`, and are conflict-checked (mod↔mod rebinds blocked; game-key clashes flagged). Plus raw `GetKeyDown/GetKey/GetKeyUp`. Implemented; in-game rebind/conflict UX pending verification |
-| Player **look & control** | 🧪 | `IAslPlayer.GetLookedAt()` (camera raycast → object + net id), `Freeze`/`Unfreeze`, `Teleport`, `SetColliderSize`/`ResetCollider`. Drives the real movement controller (the levers PropHunt uses); pending in-game verification |
+| Input & **keybinds** | ✅ | `IAslInput.RegisterKey(id, name, default)` → rebindable named keys that auto-appear in the F8 menu, persist to `BepInEx/config/ASL.Keybinds.cfg`, and are conflict-checked (mod↔mod rebinds blocked; game-key clashes flagged). Plus raw `GetKeyDown/GetKey/GetKeyUp`. PropHunt drives it in-game |
+| Player **look & control** | ✅ | `IAslPlayer.GetLookedAt()` (camera raycast → object + net id), `Freeze`/`Unfreeze`, `Teleport`, `SetColliderSize`/`ResetCollider`. Drives the real movement controller (the levers PropHunt uses); verified in-game |
 | Networking awareness | ✅ | `IAslNet` — host/client/connected state + connection-count changes (Mirror) |
 | Networking **player identity** | ✅ | `IAslNet.Players`/`LocalPlayer`/`GetPlayer(connId)` + `PlayerJoined`/`PlayerLeft` — each `IAslPlayer` pairs the game `MetaPlayer` with its Mirror identity (netId, conn id, isLocal) and a name (local from Steam); verified in-game |
-| Networking **synced state** | 🧪 | `IAslNet.GetSync(id)` → `IAslSync` — host-authoritative shared key/value store (host `Set`, all read, late joiners get a snapshot, `Changed` event). Local get/set/`Changed` verified in-game; host→client replication rides the transport (pending the 2-peer send confirmation) |
+| Networking **synced state** | ✅ | `IAslNet.GetSync(id)` → `IAslSync` — host-authoritative shared key/value store (host `Set`, all read, late joiners get a snapshot, `Changed` event). Host→client replication verified in-game (PropHunt replicates every disguise this way) |
 | Networking **object lookup** | ✅ | `IAslNet.FindObject(netId)` → resolve a spawned networked object by net id on host or client (PropHunt uses it to rebuild a prop everywhere) |
-| Networking **message transport** | 🧪 | `IAslNet.Send`/`Subscribe` (bytes) **and typed `Send<T>`/`Subscribe<T>`** (`IAslMessage` + `AslWriter`/`AslReader` — send objects, not bytes) host↔client on named channels, tunnelled through a Mirror message the game already ships. **Receive + send-delivery both confirmed in-game** (a real 2-peer packet arrived); a wire-format bug (var-compressed `netId`) found & fixed, wire self-check passes — **only the final end-to-end `NET TEST: PASS` between two peers is left**, see [docs/networking.md](docs/networking.md) |
+| Networking **message transport** | ✅ | `IAslNet.Send`/`SendToServer`/`Subscribe` (bytes) **and typed `Send<T>`/`Subscribe<T>`** (`IAslMessage` + `AslWriter`/`AslReader` — send objects, not bytes) host↔client on named channels, tunnelled through a Mirror message the game already ships. Full two-peer round trip confirmed in-game (`NET TEST: PASS`); see [docs/networking.md](docs/networking.md) |
 
 ## The 30-second mod
 
@@ -80,9 +81,10 @@ With today's API you can already make, for example:
   `Events.LocalPlayerChanged` (your player spawned/despawned) let a mod kick in at the right moment.
 - **React to specific game actions** — `Hooks.TryPostfix(type, "Method", …)` runs your code after a
   chosen game method, so you can respond to game logic without writing Harmony yourself.
-- **Multiplayer mods** — `ctx.Net` tells you host/client/connection state, and the message
-  transport (`Net.Send` / `Net.Subscribe`) lets a mod send bytes host↔client on named channels for
-  custom sync (🧪 experimental — see [networking](docs/networking.md)).
+- **Multiplayer mods** — `ctx.Net` tells you host/client/connection state, gives you player identity
+  and a host-authoritative synced store, and the message transport (`Net.Send` / `Net.SendToServer` /
+  `Net.Subscribe`, bytes or typed objects) lets a mod talk host↔client on named channels. PropHunt is
+  a full multiplayer game mode built on it — see [networking](docs/networking.md).
 - **Throwaway experiments** — drop a `.cs` script into `mods/` and iterate with no build setup.
 - **Quality-of-life & debug tools** — logging, on-screen info, value tweaks and automation built on
   the events above.
@@ -117,20 +119,21 @@ src/ASL.API/                 the stable public contract mods compile against (AS
 src/ASL/                     the framework implementation (ASL.dll)
 samples/HelloMod/            DLL mod example (also the project template)
 samples/FunPanel/            DLL mod: F8 menu that drives the real player (speed/coffee/jump/ragdoll)
-samples/PropHunt/            DLL mod: multiplayer Prop Hunt (G = disguise as a prop, F = freeze)
+samples/PropHunt/            DLL mod: multiplayer Prop Hunt (B = disguise, N = freeze, left-click to catch)
 samples/ExampleScriptMod/    script mod example
 samples/ExampleContentMod/   content mod example
 docs/                        documentation
+CHANGELOG.md                 release history
 ```
 
 ## Roadmap
 
 Rough order of what's next:
 
-- **Multiplayer (Mirror) message transport** — implemented (`IAslNet.Send`/`Subscribe`, host↔client
-  bytes on named channels); now needs a two-client in-game confirmation to graduate from 🧪 to ✅
-  (see [docs/networking.md](docs/networking.md)). After that: an unreliable/unordered channel option
-  and a higher-level typed/RPC helper on top.
+- **Multiplayer (Mirror) message transport** — done and verified in-game (`IAslNet.Send`/
+  `SendToServer`/`Subscribe`, bytes or typed objects, host↔client on named channels;
+  see [docs/networking.md](docs/networking.md)). Next on top: an unreliable/unordered channel option
+  and a higher-level RPC helper.
 - **Richer content** — atlas sub-sprites and non-main shader slots for texture swaps; more content
   types (audio, prefab/value tweaks) driven from the manifest.
 - **More built-in game events** — NPC spawned, round start/end, contraband scans — surfaced through
