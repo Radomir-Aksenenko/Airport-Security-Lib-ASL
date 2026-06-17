@@ -149,3 +149,13 @@ libraries, so other modders can depend on ASL without legal friction.
 ASL is an unofficial, fan-made modding library and is **not affiliated with the developers of
 Airport Security Sucks!**. The MIT license covers ASL's own source only — not the game or its
 assets, which remain under their own terms.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Radomir-Aksenenko%2FAirport-Security-Lib-ASL&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Radomir-Aksenenko/Airport-Security-Lib-ASL&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Radomir-Aksenenko/Airport-Security-Lib-ASL&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Radomir-Aksenenko/Airport-Security-Lib-ASL&type=date&legend=top-left" />
+ </picture>
+</a>
