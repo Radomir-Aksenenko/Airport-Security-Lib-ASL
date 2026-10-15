@@ -22,13 +22,25 @@ namespace ASL.Api
         /// </summary>
         IAslKeybind RegisterKey(string id, string displayName, KeyCode defaultKey);
 
-        /// <summary>Raw passthrough: true on the frame <paramref name="key"/> went down. Unregistered, no conflict checks.</summary>
+        /// <summary>
+        /// Raw passthrough: true on the frame <paramref name="key"/> went down. Unregistered, no conflict checks.
+        /// Raw queries are NOT suppressed while the player types in a UI text field (they read the key straight from
+        /// Unity), so a letter typed into an input box also reads as a key press here. Prefer <see cref="RegisterKey"/>
+        /// (registered keys are muted while typing, rebindable and conflict-checked), or guard the call with
+        /// <c>ctx.Ui.IsTextInputFocused</c>.
+        /// </summary>
         bool GetKeyDown(KeyCode key);
 
-        /// <summary>Raw passthrough: true while <paramref name="key"/> is held.</summary>
+        /// <summary>
+        /// Raw passthrough: true while <paramref name="key"/> is held. Not suppressed while typing in a UI text field
+        /// (see <see cref="GetKeyDown"/>); use <see cref="RegisterKey"/> or check <c>ctx.Ui.IsTextInputFocused</c>.
+        /// </summary>
         bool GetKey(KeyCode key);
 
-        /// <summary>Raw passthrough: true on the frame <paramref name="key"/> was released.</summary>
+        /// <summary>
+        /// Raw passthrough: true on the frame <paramref name="key"/> was released. Not suppressed while typing in a UI
+        /// text field (see <see cref="GetKeyDown"/>); use <see cref="RegisterKey"/> or check <c>ctx.Ui.IsTextInputFocused</c>.
+        /// </summary>
         bool GetKeyUp(KeyCode key);
     }
 

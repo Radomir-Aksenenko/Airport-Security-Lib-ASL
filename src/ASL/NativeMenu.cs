@@ -34,6 +34,7 @@ namespace ASL
         private string _currentMod;
         private PageControl _currentPage;   // a toolkit sub-page (IModMenu.AddPage) shown under _currentMod
         private PageControl _builtinPage;   // a built-in root page ("Mod Manager" / "ASL"), shown instead of the root list
+        private int _rootPage;              // page of the root mod list (only used when the rows do not all fit on screen)
 
         // Animated backdrop that mimics the Settings screen's flowing background.
         private RawImage _animBg;
@@ -72,6 +73,7 @@ namespace ASL
                     _currentMod = null;
                     _currentPage = null;
                     _builtinPage = null;
+                    _rootPage = 0;
                     if (!_built) Build();
                     else
                     {
@@ -230,14 +232,39 @@ namespace ASL
                 // Built-in pages first, then the mod list exactly as before.
                 AddRow("Mod Manager", true, () => { _builtinPage = new PageControl { Label = "Mod Manager", Build = UiModManagerPage.Build }; Rebuild(); }, idx++);
                 AddRow("ASL", true, () => { _builtinPage = new PageControl { Label = "ASL", Build = UiAslPage.Build }; Rebuild(); }, idx++);
-                AddRow("— Mods —", false, null, idx++);
-                foreach (var sec in _registry.Sections)
+
+                // Rows are absolutely positioned, so a long mod list would run off the bottom of the screen. When the
+                // list does not fit, it is paginated: as many mod rows as fit, plus "< Prev" / "Next >" rows.
+                // (Fixed rows: Mod Manager, ASL, the "Mods" header and Close.) With few mods nothing changes.
+                int mods = _registry.Sections.Count;
+                int capacity = RootRowCapacity();
+                const int fixedRows = 4;
+                int first = 0, count = mods;
+                bool paged = mods > 0 && fixedRows + mods > capacity;
+                int pages = 1;
+                if (paged)
                 {
-                    var modName = sec.ModName;
+                    int perPage = Mathf.Max(1, capacity - fixedRows - 2);   // 2 rows reserved for Prev / Next
+                    pages = (mods + perPage - 1) / perPage;
+                    if (_rootPage >= pages) _rootPage = pages - 1;
+                    if (_rootPage < 0) _rootPage = 0;
+                    first = _rootPage * perPage;
+                    count = Mathf.Min(perPage, mods - first);
+                }
+                else _rootPage = 0;
+
+                AddRow(paged ? $"— Mods ({_rootPage + 1}/{pages}) —" : "— Mods —", false, null, idx++);
+                for (int m = first; m < first + count; m++)
+                {
+                    var modName = _registry.Sections[m].ModName;
                     AddRow(modName, true, () => { _currentMod = modName; Rebuild(); }, idx++);
                 }
-                if (_registry.Sections.Count == 0)
+                if (mods == 0)
                     AddRow("(no mods loaded)", false, null, idx++);
+                if (paged && _rootPage > 0)
+                    AddRow("< Prev", true, () => { _rootPage--; Rebuild(); }, idx++);
+                if (paged && _rootPage < pages - 1)
+                    AddRow("Next >", true, () => { _rootPage++; Rebuild(); }, idx++);
                 AddRow("Close", true, () => _registry.Visible = false, idx++);
             }
             else
@@ -340,6 +367,16 @@ namespace ASL
 
             // (Re)apply the settings-style background; the panel fills the whole screen.
             ApplyPanelStyle();
+        }
+
+        // How many absolutely-positioned rows fit between the top padding and the bottom of the screen, in canvas
+        // units (the canvas height follows the screen: a 1920x1080 reference with match 0.5).
+        private static int RootRowCapacity()
+        {
+            float canvasH = Screen.height / UiRuntime.RefScale();
+            if (canvasH < 200f) canvasH = 1080f;
+            int n = Mathf.FloorToInt((canvasH - 28f - TopPad + RowGap) / (RowH + RowGap));
+            return Mathf.Max(n, 7);
         }
 
         private GameObject AddRow(string text, bool interactable, Action onClick, int index)

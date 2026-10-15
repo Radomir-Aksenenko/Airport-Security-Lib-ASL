@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
 
@@ -16,6 +17,10 @@ namespace ASL
         public readonly string ModName;
         public readonly ManualLogSource Log;
 
+        /// <summary>Dialogs (Confirm / Prompt / Alert) this mod has open; destroyed without callbacks when the mod is released.</summary>
+        public readonly List<UiWindow> Dialogs = new List<UiWindow>();
+
+        private readonly HashSet<string> _reportedOnce = new HashSet<string>(StringComparer.Ordinal);
         private string _lastMsg;
         private float _lastTime;
         private int _suppressed;
@@ -46,6 +51,18 @@ namespace ASL
         {
             if (f == null) return fallback;
             try { return f(); } catch (Exception ex) { Report(what, ex); return fallback; }
+        }
+
+        /// <summary>Logs a widget / window build failure once per (kind, message): mod name, widget type and the exception message.</summary>
+        public void ReportBuildFailure(string kind, Exception ex)
+        {
+            try
+            {
+                string msg = ex.GetType().Name + ": " + ex.Message;
+                if (!_reportedOnce.Add(kind + "|" + msg)) return;
+                Log?.LogError($"[{ModName}] UI '{kind}' could not be built ({msg}); showing a placeholder instead. {ex.StackTrace}");
+            }
+            catch { /* logging must never throw */ }
         }
 
         /// <summary>Logs an exception from a callback (deduplicated within a 5 s burst).</summary>

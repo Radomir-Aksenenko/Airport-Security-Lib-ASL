@@ -60,7 +60,10 @@ namespace ASL
                 var e = list[i];
                 if (e == null || e.Dead) { list.RemoveAt(i); continue; }
                 if (string.IsNullOrEmpty(e.Tooltip) || !e.IsActiveInHierarchy()) continue;
-                if (RectTransformUtility.RectangleContainsScreenPoint(e.Rt, UiRuntime.Mouse, null)) return e;
+                if (!RectTransformUtility.RectangleContainsScreenPoint(e.Rt, UiRuntime.Mouse, null)) continue;
+                var clip = e.ClipViewport;   // scrolled out of its viewport: not under the pointer
+                if (clip != null && !RectTransformUtility.RectangleContainsScreenPoint(clip, UiRuntime.Mouse, null)) continue;
+                return e;
             }
             return null;
         }
@@ -128,6 +131,9 @@ namespace ASL
             }
             catch { }
         }
+
+        /// <summary>Hides the tooltip and forgets its target (a window closed / was destroyed, nothing is hovered).</summary>
+        public static void Reset() => Hide();
 
         private static void Hide()
         {

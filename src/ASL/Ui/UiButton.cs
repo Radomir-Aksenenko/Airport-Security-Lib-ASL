@@ -55,9 +55,13 @@ namespace ASL
             get => _text;
             set
             {
-                _text = value ?? string.Empty;
+                value = value ?? string.Empty;
+                if (value == _text) return;
+                _text = value;
                 if (_label != null) _label.text = _text;
-                Host.MarkDirty();
+                // The caption only changes the layout when the button's width follows its text.
+                bool fixedWidth = _style.Width > 0f || _style.Shape == UiShape.Circle || _style.Shape == UiShape.Square;
+                if (!fixedWidth) Host.MarkDirty();
             }
         }
 
@@ -102,11 +106,28 @@ namespace ASL
 
         private void Rebuild()
         {
+            // Keep everything the caller may have set on the old object: sibling slot, visibility, interactability
+            // (a CanvasGroup on the old object) and an explicit SetSize / SetFlexible.
             int sib = 0;
+            bool wasActive = true, userSized = SizeSetByUser, locked = FlexLocked;
+            float pw = -1f, mw = -1f, ph = -1f, mh = -1f, fw = 0f;
             try { sib = Rt.GetSiblingIndex(); } catch { }
-            try { if (Go != null) UnityEngine.Object.Destroy(Go); } catch { }
+            try { wasActive = Go.activeSelf; } catch { }
+            if (userSized)
+            {
+                var old = Le;
+                pw = old.preferredWidth; mw = old.minWidth; ph = old.preferredHeight; mh = old.minHeight; fw = old.flexibleWidth;
+            }
+            try { if (Go != null) { Go.SetActive(false); UnityEngine.Object.Destroy(Go); } } catch { }
             Build();
             try { Rt.SetSiblingIndex(sib); } catch { }
+            RestoreBaseState(wasActive);
+            if (userSized)
+            {
+                var le = Le;
+                le.preferredWidth = pw; le.minWidth = mw; le.preferredHeight = ph; le.minHeight = mh; le.flexibleWidth = fw;
+                FlexLocked = locked;
+            }
             Host.MarkDirty();
         }
 
@@ -265,7 +286,7 @@ namespace ASL
         public override void Poll()
         {
             if (_native || _bg == null) return;
-            if (_hs.Update(Host, Rt, Interactable))
+            if (_hs.Update(Host, this, Rt, Interactable))
                 WriteVisual(_hs.Pressed ? 2 : (_hs.Hover ? 1 : 0));
         }
 

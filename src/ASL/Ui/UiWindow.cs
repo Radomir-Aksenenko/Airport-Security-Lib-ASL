@@ -48,7 +48,15 @@ namespace ASL
             var host = new UiHost(owner, theme);
             var w = new UiWindow(host, key, localId, opt, hud, dialog) { _title = title ?? string.Empty };
             host.Window = w;
-            w.BuildVisuals();
+            try { w.BuildVisuals(); }
+            catch (Exception ex)
+            {
+                // Degrade instead of throwing into the mod: log once, drop the half-built objects and build a bare
+                // window (placeholder label) the mod's builder code can keep adding to.
+                owner.ReportBuildFailure("window '" + localId + "'", ex);
+                w.DiscardPartial();
+                w.BuildFallback();
+            }
             return w;
         }
 
@@ -81,6 +89,7 @@ namespace ASL
             Host.Dirty = true;
             Host.Repoll = 3;
             UiRuntime.EnsureEventSystem();
+            UiRuntime.WindowOpening(this);   // a window opened while the F8 menu is up would sit under it: hide the menu
             UiRuntime.WindowOpened(this);
             Relayout();
             try { Opened?.Invoke(); } catch (Exception ex) { Owner.Report("window Opened", ex); }
@@ -128,6 +137,7 @@ namespace ASL
             if (_boundKey != null && _keyHandler != null) { try { _boundKey.Pressed -= _keyHandler; } catch { } }
             _boundKey = null;
             MarkDead();
+            Owner.Dialogs.Remove(this);
             if (_close != null) _close.MarkDead();
             try { if (_canvasGo != null) UnityEngine.Object.Destroy(_canvasGo); } catch { }
         }
@@ -167,6 +177,39 @@ namespace ASL
             var v = new Vector2(fx, fy);
             Rt.anchorMin = v; Rt.anchorMax = v; Rt.pivot = v;
             Rt.anchoredPosition = new Vector2(Opt.OffsetX, Opt.OffsetY);
+        }
+
+        // Removes whatever a failed BuildVisuals left behind (objects, polled/tipped/scroll registrations, children).
+        private void DiscardPartial()
+        {
+            try { if (_canvasGo != null) UnityEngine.Object.Destroy(_canvasGo); } catch { }
+            _canvasGo = null; _canvas = null; _rootRt = null; _titleBar = null; _body = null; _titleText = null;
+            if (_close != null) _close.MarkDead();
+            _close = null;
+            for (int i = 0; i < Host.Pollers.Count; i++) Host.Pollers[i].MarkDead();
+            Host.Pollers.Clear(); Host.Tipped.Clear(); Host.Scrolls.Clear();
+            Children.Clear();
+            ScrollArea = null;
+            Rt = null; Go = null;
+        }
+
+        // Minimal window: a canvas, a plain panel that is also the content column, and a placeholder label.
+        private void BuildFallback()
+        {
+            var theme = Theme;
+            _canvasGo = UiRuntime.NewCanvas("ASL_Win_" + Key, IsHud ? 32000 : (IsDialog ? 32700 : 32100));
+            _canvas = _canvasGo.GetComponent<Canvas>();
+            _rootRt = _canvasGo.GetComponent<RectTransform>();
+            var panel = UiBuild.Rect("ASL_Window", _rootRt);
+            Init(panel);
+            UiBuild.Img(panel, null, theme.Background, !IsHud, false);
+            UiBuild.VGroup(panel.gameObject, theme.Spacing, 12, 12, 12, 12, TextAnchor.UpperLeft);
+            ContentRt = panel;
+            Host.HoverRect = Rt;
+            Rt.sizeDelta = new Vector2(Opt.Width, Opt.Height > 0f ? Opt.Height : 200f);
+            ApplyAnchor();
+            _canvasGo.SetActive(false);
+            Add(new UiUnavailable(Host, ContentRt, "window"));
         }
 
         private void BuildVisuals()

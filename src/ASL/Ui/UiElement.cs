@@ -29,6 +29,12 @@ namespace ASL
         private string _tooltip;
         private bool _interactable = true;
         private CanvasGroup _group;
+        private bool _tipped;                 // already in Host.Tipped (never add twice)
+        private RectTransform _clip;
+        private bool _clipResolved;
+
+        /// <summary>True once SetSize / SetFlexible was called explicitly (a rebuild must keep those values).</summary>
+        public bool SizeSetByUser;
 
         protected UiElement(UiHost host) { Host = host; }
 
@@ -46,6 +52,40 @@ namespace ASL
         public LayoutElement Le => _le != null ? _le : (_le = UiBuild.Le(Go));
 
         protected void NeedPoll() => Host.AddPoller(this);
+
+        /// <summary>
+        /// Viewport of the nearest enclosing scroll area (null when not inside one): hover / tooltip tests ignore
+        /// the part of an element that is scrolled out of view. Resolved lazily (the parent chain is only known after Add).
+        /// </summary>
+        public RectTransform ClipViewport
+        {
+            get
+            {
+                if (!_clipResolved)
+                {
+                    for (var p = Parent; p != null; p = p.Parent)
+                        if (p.ScrollArea != null) { _clip = p.ScrollArea.Viewport; break; }
+                    _clipResolved = Parent != null;   // keep trying until the element has been added somewhere
+                }
+                return _clip;
+            }
+        }
+
+        /// <summary>Re-applies the base-class state (interactable CanvasGroup, hidden) after the GameObject was rebuilt.</summary>
+        protected void RestoreBaseState(bool wasActive)
+        {
+            if (!_interactable)
+            {
+                try
+                {
+                    _group = Go.AddComponent<CanvasGroup>();
+                    _group.interactable = false;
+                    _group.alpha = 0.5f;
+                }
+                catch { }
+            }
+            if (!wasActive) { try { Go.SetActive(false); } catch { } }
+        }
 
         /// <summary>Per-frame work; only called while the owning host is active.</summary>
         public virtual void Poll() { }
@@ -93,9 +133,8 @@ namespace ASL
             get => _tooltip;
             set
             {
-                bool had = !string.IsNullOrEmpty(_tooltip);
-                _tooltip = value;
-                if (!had && !string.IsNullOrEmpty(value)) Host.Tipped.Add(this);
+                    _tooltip = value;
+                if (!_tipped && !string.IsNullOrEmpty(value)) { _tipped = true; Host.Tipped.Add(this); }
             }
         }
 
@@ -107,6 +146,7 @@ namespace ASL
             le.preferredHeight = height > 0f ? height : -1f;
             le.minHeight = height > 0f ? height : -1f;
             if (width > 0f) { le.flexibleWidth = 0f; FlexLocked = true; }
+            SizeSetByUser = true;
             Host.MarkDirty();
             return this;
         }
@@ -115,6 +155,7 @@ namespace ASL
         {
             Le.flexibleWidth = flexibleWidth;
             FlexLocked = true;
+            SizeSetByUser = true;
             Host.MarkDirty();
             return this;
         }

@@ -72,7 +72,13 @@ namespace ASL
     {
         public bool Hover, Pressed;
 
-        public bool Update(UiHost host, RectTransform rt, bool enabled)
+        public bool Update(UiHost host, RectTransform rt, bool enabled) => Update(host, null, rt, enabled);
+
+        /// <summary>
+        /// Same, for a widget: an inactive element never counts as hovered, and neither does a point outside
+        /// the scroll viewport the element sits in (its scrolled-out part is clipped on screen).
+        /// </summary>
+        public bool Update(UiHost host, UiElement owner, RectTransform rt, bool enabled)
         {
             bool hover = Hover, pressed = Pressed;
             if (!host.IsHover || !enabled || !UiRuntime.PointerActive)
@@ -82,7 +88,18 @@ namespace ASL
             else
             {
                 if (host.ShouldRetest)
-                    hover = RectTransformUtility.RectangleContainsScreenPoint(rt, UiRuntime.Mouse, null);
+                {
+                    hover = false;
+                    if (owner == null || owner.IsActiveInHierarchy())
+                    {
+                        hover = RectTransformUtility.RectangleContainsScreenPoint(rt, UiRuntime.Mouse, null);
+                        if (hover && owner != null)
+                        {
+                            var clip = owner.ClipViewport;
+                            if (clip != null && !RectTransformUtility.RectangleContainsScreenPoint(clip, UiRuntime.Mouse, null)) hover = false;
+                        }
+                    }
+                }
                 if (!hover) pressed = false;
                 else if (UiRuntime.MouseDown) pressed = true;
                 else if (!UiRuntime.MouseHeld) pressed = false;

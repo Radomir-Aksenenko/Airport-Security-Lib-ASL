@@ -169,7 +169,7 @@ are also raw passthrough queries for quick throwaway keys.
 public interface IAslInput
 {
     IAslKeybind RegisterKey(string id, string displayName, KeyCode defaultKey);
-    bool GetKeyDown(KeyCode key);   // raw passthrough, no registration / conflict checks
+    bool GetKeyDown(KeyCode key);   // raw passthrough, no registration / conflict checks; NOT muted while typing in a UI text field
     bool GetKey(KeyCode key);
     bool GetKeyUp(KeyCode key);
 }
@@ -207,6 +207,9 @@ How conflicts are handled:
   conservative best-effort list (WASD, arrows, Space, Shift, Ctrl, mouse, Tab, Esc).
 - The player rebinds in the **F8 menu**: open your mod, click the keybind row, press a key (Esc
   cancels). Bindings persist to `BepInEx/config/ASL.Keybinds.cfg` (editable by hand too).
+
+Raw `GetKeyDown` / `GetKey` / `GetKeyUp` read the key straight from Unity, so they are **not** suppressed while the
+player types in a toolkit text field. Prefer `RegisterKey` (muted while typing) or check `ctx.Ui.IsTextInputFocused`.
 
 ## Networking
 

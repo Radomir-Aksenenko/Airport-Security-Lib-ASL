@@ -53,7 +53,18 @@ namespace ASL
         public string Label
         {
             get => _text;
-            set { _text = value ?? string.Empty; _label.text = _text; Host.MarkDirty(); }
+            set
+            {
+                value = value ?? string.Empty;
+                if (value == _text) return;
+                string old = _text;
+                _text = value;
+                _label.text = _text;
+                // Switch / checkbox captions fill the row (one line either way); only the button look sizes
+                // to its text, and a long or multi-line caption may wrap to another line.
+                if (_style == UiToggleStyle.Button || old.Length > 30 || value.Length > 30
+                    || old.IndexOf('\n') >= 0 || value.IndexOf('\n') >= 0) Host.MarkDirty();
+            }
         }
 
         private void Build(RectTransform parent)
@@ -151,7 +162,7 @@ namespace ASL
 
         public override void Poll()
         {
-            if (_hs.Update(Host, Rt, Interactable)) WriteHover();
+            if (_hs.Update(Host, this, Rt, Interactable)) WriteHover();
 
             float target = _value ? 1f : 0f;
             if (_anim != target)

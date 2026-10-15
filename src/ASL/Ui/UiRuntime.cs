@@ -28,6 +28,8 @@ namespace ASL
         // ---- per-frame input snapshot (read once in Tick; widgets read these statics) ----
         public static Vector2 Mouse;
         public static bool MouseDown, MouseHeld, MouseUp, PointerChanged, EnterPressed, EscapePressed;
+        /// <summary>Set when something already acted on this frame's Enter (a text field submitted): nothing else may also react to it.</summary>
+        public static bool EnterConsumed;
         public static float Dt, Wheel;
         public static bool PointerActive = true;
 
@@ -36,6 +38,8 @@ namespace ASL
         private static bool _focusNow, _focusPrev;
         private static string _lastTickError;
         private static float _lastTickErrorTime;
+        private static bool _inputErrorLogged;
+        private static float _nextEsCheck, _esRetryAt;
 
         /// <summary>The captured game menu-button prefab clone (shared with NativeMenu), for <c>UiShape.Native</c>.</summary>
         public static GameObject NativeTemplate { get; private set; }
@@ -82,22 +86,51 @@ namespace ASL
             scaler.matchWidthOrHeight = 0.5f;
             go.AddComponent<GraphicRaycaster>();
             go.transform.SetParent(_holder.transform, false);
+            // A CanvasScaler only applies its scale when enabled (and from its Update): toggling the object once
+            // everything is configured makes canvas.scaleFactor correct immediately instead of one frame late
+            // (placement maths that read it right after creation would otherwise be off at non-1080p).
+            go.SetActive(false);
+            go.SetActive(true);
             return go;
         }
 
-        /// <summary>Same logic as NativeMenu: make sure uGUI can receive clicks.</summary>
+        /// <summary>
+        /// The canvas scale the 1920x1080 / match-0.5 scalers resolve to at the current screen size, computed from
+        /// the screen alone (so it is right even before a fresh canvas has applied its scaler).
+        /// </summary>
+        public static float RefScale()
+        {
+            float w = Screen.width, h = Screen.height;
+            if (w < 1f || h < 1f) return 1f;
+            return Mathf.Sqrt((w / 1920f) * (h / 1080f));
+        }
+
+        /// <summary>
+        /// Same logic as NativeMenu: make sure uGUI can receive clicks. Called on every window open and (throttled)
+        /// while a toolkit host is open, so a scene change that destroyed the game's EventSystem is healed. If the
+        /// input module cannot be created the half-made EventSystem is removed again and the attempt retried later
+        /// (a module-less EventSystem would make <c>EventSystem.current</c> non-null and block every later fix).
+        /// </summary>
         public static void EnsureEventSystem()
         {
+            GameObject es = null;
             try
             {
                 if (EventSystem.current != null) return;
-                var es = new GameObject("ASL_EventSystem");
+                float now = Time.realtimeSinceStartup;
+                if (now < _esRetryAt) return;
+                es = new GameObject("ASL_EventSystem");
                 UnityEngine.Object.DontDestroyOnLoad(es);
                 es.AddComponent<EventSystem>();
                 es.AddComponent<StandaloneInputModule>();
                 AslPlugin.Logger?.LogInfo("[ui] created an EventSystem (none was present).");
             }
-            catch (Exception ex) { AslPlugin.Logger?.LogWarning($"[ui] EventSystem check failed: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                try { if (es != null) UnityEngine.Object.Destroy(es); } catch { }
+                _esRetryAt = Time.realtimeSinceStartup + 30f;
+                AslPlugin.Logger?.LogWarning($"[ui] EventSystem check failed: {ex.Message} (retrying in 30 s)");
+            }
         }
 
         public static bool IsOurs(Transform t)
@@ -119,6 +152,22 @@ namespace ASL
         /// <summary>Open HUD overlays; read-only view for the console <c>windows</c> command.</summary>
         public static IReadOnlyList<UiWindow> OpenHuds => Huds;
 
+        /// <summary>
+        /// Called as a (non-HUD) window opens. The F8 menu canvas (32760) is above every window layer, so a window
+        /// or dialog that opens while the menu is up would be hidden behind it (and not ticked): close the menu
+        /// first. Dropdown popups are not windows (they live above the menu at 32763) and are unaffected.
+        /// </summary>
+        public static void WindowOpening(UiWindow w)
+        {
+            if (w.IsHud) return;
+            try
+            {
+                var menu = AslPlugin.Menu;
+                if (menu != null && menu.Visible) menu.Visible = false;
+            }
+            catch (Exception ex) { AslPlugin.Logger?.LogWarning($"[ui] could not close the F8 menu for a window: {ex.Message}"); }
+        }
+
         public static void WindowOpened(UiWindow w)
         {
             if (w.IsHud) { if (!Huds.Contains(w)) Huds.Add(w); }
@@ -139,8 +188,12 @@ namespace ASL
             if (_hover == w.Host) SetHover(null);
             if (HoverWindow == w) HoverWindow = null;
             _hoverDirty = true;
+            UiTooltips.Reset();   // the tooltip may belong to this window; the idle branch of Tick never runs for it
             RecomputeCursor();
         }
+
+        /// <summary>The pointer-over state must be re-evaluated next tick (a popup or window appeared / vanished).</summary>
+        public static void MarkHoverDirty() { _hoverDirty = true; }
 
         public static void DestroyWindow(UiWindow w)
         {
@@ -149,6 +202,9 @@ namespace ASL
             Huds.Remove(w);
             Stack.Remove(w);
             w.DisposeVisuals();
+            UiTooltips.Reset();
+            _hoverDirty = true;
+            RecomputeCursor();   // never leave a cursor / input-block reason behind for a destroyed window
         }
 
         public static void BringToFront(UiWindow w)
@@ -205,6 +261,7 @@ namespace ASL
             if (!IsActive())
             {
                 if (_focusNow || _focusPrev) { _focusNow = false; _focusPrev = false; CursorManager.SetTextInput(false); }
+                UiTooltips.Reset();   // nothing is open any more: no tooltip may outlive its window
                 return;
             }
             try { TickCore(); }
@@ -221,16 +278,31 @@ namespace ASL
         private static void ReadInput()
         {
             Dt = Time.unscaledDeltaTime;
-            var mp = Input.mousePosition;
-            float dx = mp.x - Mouse.x, dy = mp.y - Mouse.y;
-            Mouse = new Vector2(mp.x, mp.y);
-            MouseDown = Input.GetMouseButtonDown(0);
-            MouseHeld = Input.GetMouseButton(0);
-            MouseUp = Input.GetMouseButtonUp(0);
-            Wheel = Input.mouseScrollDelta.y;
-            EnterPressed = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
-            EscapePressed = Input.GetKeyDown(KeyCode.Escape);
-            PointerChanged = dx != 0f || dy != 0f || MouseDown || MouseUp || Wheel != 0f;
+            EnterConsumed = false;
+            try
+            {
+                var mp = Input.mousePosition;
+                float dx = mp.x - Mouse.x, dy = mp.y - Mouse.y;
+                Mouse = new Vector2(mp.x, mp.y);
+                MouseDown = Input.GetMouseButtonDown(0);
+                MouseHeld = Input.GetMouseButton(0);
+                MouseUp = Input.GetMouseButtonUp(0);
+                Wheel = Input.mouseScrollDelta.y;
+                EnterPressed = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+                EscapePressed = Input.GetKeyDown(KeyCode.Escape);
+                PointerChanged = dx != 0f || dy != 0f || MouseDown || MouseUp || Wheel != 0f;
+            }
+            catch (Exception ex)
+            {
+                // A failing input read must not take the whole toolkit down every frame: log once, report "no input".
+                MouseDown = MouseHeld = MouseUp = EnterPressed = EscapePressed = PointerChanged = false;
+                Wheel = 0f;
+                if (!_inputErrorLogged)
+                {
+                    _inputErrorLogged = true;
+                    AslPlugin.Logger?.LogError($"[ui] reading input failed ({ex.GetType().Name}: {ex.Message}); the toolkit keeps running without input until it recovers.");
+                }
+            }
         }
 
         private static void TickCore()
@@ -250,26 +322,63 @@ namespace ASL
             if (Wheel != 0f && _hover != null) _hover.ScrollAt(Mouse, Wheel);
 
             // Widgets.
-            for (int i = Huds.Count - 1; i >= 0; i--) { if (i < Huds.Count) Huds[i].TickHud(); }
+            // One window's failure must not stop the others from ticking.
+            for (int i = Huds.Count - 1; i >= 0; i--)
+            {
+                if (i >= Huds.Count) continue;
+                var h = Huds[i];
+                try { h.TickHud(); } catch (Exception ex) { h.Host.Owner.Report("hud tick", ex); }
+            }
             if (!menuVisible)
-                for (int i = Stack.Count - 1; i >= 0; i--) { if (i < Stack.Count) Stack[i].Tick(); }
-            else if (PageHost != null) PageHost.PollAll();
+            {
+                for (int i = Stack.Count - 1; i >= 0; i--)
+                {
+                    if (i >= Stack.Count) continue;
+                    var w = Stack[i];
+                    try { w.Tick(); } catch (Exception ex) { w.Host.Owner.Report("window tick", ex); }
+                }
+            }
+            else if (PageHost != null)
+            {
+                try { PageHost.PollAll(); } catch (Exception ex) { PageHost.Owner.Report("page tick", ex); }
+            }
 
             var pop = UiPopup.Current;
-            if (pop != null) { pop.Host.PollAll(); pop.Tick(); }
+            if (pop != null)
+            {
+                try { pop.Host.PollAll(); pop.Tick(); } catch (Exception ex) { pop.Host.Owner.Report("popup tick", ex); }
+            }
 
-            // Keyboard: Escape closes the popup / top window, Enter confirms the top dialog. Never while
-            // typing in a text field (this frame or last: TMP consumes Escape/Enter before we run) or rebinding a key.
+            // Heal a missing EventSystem (a scene change can destroy the game's) while any interactive toolkit UI is up.
+            float nowRt = Time.realtimeSinceStartup;
+            if (nowRt >= _nextEsCheck)
+            {
+                _nextEsCheck = nowRt + 1f;
+                if (Stack.Count > 0 || PageHost != null || UiPopup.Current != null) EnsureEventSystem();
+            }
+
+            // Keyboard: Escape closes the popup / top window, Enter confirms the top dialog. Not while typing in a text
+            // field (this frame or last: TMP consumes Escape/Enter before we run) or rebinding a key - with one
+            // exception: Escape in a dialog's own text field (Prompt) cancels the dialog in a single press.
+            //
+            // Caveat: toolkit code cannot consume input, so the game's own Escape handling (pause menu) may react to
+            // the same key press that closes a window. To keep that to a minimum we only act on Escape when the
+            // top-most open toolkit window opted in (CloseOnEscape) and is closable - never for HUDs, never for
+            // windows beneath it, and never while the F8 menu is up (its behaviour is unchanged).
             bool typing = _focusNow || _focusPrev;
             bool rebinding = AslPlugin.Keybinds != null && AslPlugin.Keybinds.IsRebinding;
-            if (!typing && !rebinding)
+            if (!rebinding)
             {
                 if (EscapePressed)
                 {
                     if (UiPopup.Current != null) UiPopup.CloseCurrent();
-                    else if (!menuVisible) CloseTopOnEscape();
+                    else if (!menuVisible)
+                    {
+                        if (!typing) CloseTopOnEscape();
+                        else CloseTopDialogOnEscape();
+                    }
                 }
-                else if (EnterPressed && !menuVisible) ConfirmTopDialog();
+                else if (EnterPressed && !typing && !menuVisible && !EnterConsumed) ConfirmTopDialog();
             }
 
             if (MouseUp) DeselectNonInput();
@@ -316,14 +425,21 @@ namespace ASL
             if (h != null) { h.IsHover = true; h.Repoll = 2; }
         }
 
+        // Only the top-most window may react: if it does not want / cannot be closed by Escape, stop - never close
+        // the window beneath it (that one is hidden behind a window the user did not dismiss).
         private static void CloseTopOnEscape()
         {
-            for (int i = Stack.Count - 1; i >= 0; i--)
-            {
-                var w = Stack[i];
-                if (w.Opt.CloseOnEscape && (w.Opt.Closable || w.IsDialog)) { w.RunEscape(); return; }
-                if (w.Opt.Modal) return;
-            }
+            if (Stack.Count == 0) return;
+            var w = Stack[Stack.Count - 1];
+            if (w.Opt.CloseOnEscape && (w.Opt.Closable || w.IsDialog)) w.RunEscape();
+        }
+
+        // Escape while a text field is focused: only a dialog (Prompt) reacts, so one press cancels it.
+        private static void CloseTopDialogOnEscape()
+        {
+            if (Stack.Count == 0) return;
+            var w = Stack[Stack.Count - 1];
+            if (w.IsDialog && w.Opt.CloseOnEscape && w.EscapeAction != null && Time.frameCount > w.OpenedFrame) w.RunEscape();
         }
 
         private static void ConfirmTopDialog()
@@ -331,7 +447,10 @@ namespace ASL
             if (Stack.Count == 0) return;
             var w = Stack[Stack.Count - 1];
             if (w.IsDialog && w.EnterAction != null && Time.frameCount > w.OpenedFrame)
+            {
+                EnterConsumed = true;   // one Enter confirms one dialog, even if its callback opens / closes another
                 w.Host.Owner.Fire(w.EnterAction, "dialog confirm");
+            }
         }
 
         // A clicked slider / button stays "selected" in the EventSystem, so Space/Enter/arrows would re-trigger
