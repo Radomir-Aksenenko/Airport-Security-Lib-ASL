@@ -14,6 +14,10 @@ namespace ASL.Api
     /// <item><c>1.2.3</c> (bare) — same as <c>&gt;=1.2.3</c></item>
     /// <item>empty or <c>*</c> — any version</item>
     /// </list>
+    /// Pre-release versions (<c>2.0.0-beta.1</c>) follow npm semantics: they satisfy a range only if one of the
+    /// range's own bounds is a pre-release of the same <c>major.minor.patch</c> (so <c>^1.0.0</c> does NOT accept
+    /// <c>2.0.0-beta.1</c> or <c>1.5.0-rc.1</c>, but <c>^1.0.0-beta.1</c> accepts <c>1.0.0-beta.2</c>). A range with
+    /// no bounds (<c>*</c>) matches everything, pre-releases included.
     /// <code>
     /// VersionRange.Parse("^1.2.0").Satisfies("1.5.1");   // true
     /// VersionRange.Parse("^1.2.0").Satisfies("2.0.0");   // false
@@ -104,9 +108,21 @@ namespace ASL.Api
         public bool Satisfies(SemVersion version)
         {
             if (version == null) return false;
+            if (version.IsPreRelease && _bounds.Count > 0 && !AllowsPreRelease(version)) return false;
             for (int i = 0; i < _bounds.Count; i++)
                 if (!_bounds[i].Test(version)) return false;
             return true;
+        }
+
+        // npm rule: a pre-release only matches if some bound is a pre-release of the same major.minor.patch.
+        private bool AllowsPreRelease(SemVersion v)
+        {
+            for (int i = 0; i < _bounds.Count; i++)
+            {
+                var b = _bounds[i].Version;
+                if (b.IsPreRelease && b.Major == v.Major && b.Minor == v.Minor && b.Patch == v.Patch) return true;
+            }
+            return false;
         }
 
         /// <summary>Parse <paramref name="version"/> and test it; false if it is not a valid version.</summary>

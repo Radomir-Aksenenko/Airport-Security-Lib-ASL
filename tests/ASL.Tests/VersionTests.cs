@@ -23,13 +23,40 @@ namespace ASL.Tests
         [InlineData("")]
         [InlineData(null)]
         [InlineData("a.b.c")]
-        [InlineData("1.2.3.4")]
+        [InlineData("1.2.3.4.5")]
+        [InlineData("1.2.3.x")]
+        [InlineData("1.2.3.")]
         [InlineData("1..3")]
         [InlineData("1.2.3-")]
         [InlineData("-1.0.0")]
         public void SemVersion_RejectsGarbage(string text)
         {
             Assert.False(SemVersion.TryParse(text, out _));
+        }
+
+        [Theory]
+        [InlineData("1.0.0.0", 1, 0, 0)]
+        [InlineData("2.3.4.5", 2, 3, 4)]
+        public void SemVersion_AcceptsFourthComponent_AndIgnoresIt(string text, int maj, int min, int pat)
+        {
+            Assert.True(SemVersion.TryParse(text, out var v));
+            Assert.Equal(new SemVersion(maj, min, pat), v);
+            Assert.Equal(SemVersion.Parse("1.2.3"), SemVersion.Parse("1.2.3.9"));
+        }
+
+        [Theory]
+        [InlineData("^1.0.0", "2.0.0-beta.1", false)]
+        [InlineData("^1.0.0", "1.5.0-rc.1", false)]
+        [InlineData("^1.0.0", "1.5.0", true)]
+        [InlineData(">=1.0.0", "1.2.0-beta", false)]
+        [InlineData("^1.0.0-beta.1", "1.0.0-beta.2", true)]
+        [InlineData("^1.0.0-beta.1", "1.0.0", true)]
+        [InlineData("^1.0.0-beta.1", "1.1.0-beta.2", false)]
+        [InlineData(">=1.0.0-beta.1 <2.0.0", "1.0.0-rc.1", true)]
+        [InlineData("*", "2.0.0-beta.1", true)]
+        public void VersionRange_PreReleaseSemantics(string range, string version, bool expected)
+        {
+            Assert.Equal(expected, VersionRange.Parse(range).Satisfies(version));
         }
 
         [Fact]

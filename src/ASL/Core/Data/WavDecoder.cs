@@ -43,7 +43,7 @@ namespace ASL.Core
                 uint size = U32(b, (int)pos + 4);
                 long body = pos + 8;
                 long avail = b.Length - body;
-                // A data chunk may legally claim more than the file holds (streamed/truncated writers: size 0 or 0xFFFFFFFF).
+                // A data chunk may legally claim more than the file holds (streamed/truncated writers: 0xFFFFFFFF is clamped here, size 0 is handled for the data chunk below).
                 long len = size > avail ? avail : size;
 
                 if (Tag(b, (int)pos, "fmt "))
@@ -66,6 +66,7 @@ namespace ASL.Core
                 else if (Tag(b, (int)pos, "data"))
                 {
                     if (!haveFmt) throw new InvalidDataException("data chunk before fmt chunk");
+                    if (size == 0) len = avail;   // streamed writers leave the size 0 (0xFFFFFFFF is already clamped above): the data runs to the end of the file
                     return DecodeData(b, (int)body, (int)len, format, channels, rate, bits, blockAlign);
                 }
 

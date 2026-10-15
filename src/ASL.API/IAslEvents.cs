@@ -36,7 +36,7 @@ namespace ASL.Api
         /// <summary>Fires when the player changes the game language; the argument is the new language token.</summary>
         event Action<string> LanguageChanged;
 
-        /// <summary>Fires when the game is shutting down (or ASL unloads). Save your state here.</summary>
+        /// <summary>Fires when the game is shutting down (or ASL unloads), at most once. On IL2CPP the game's quit callback is best-effort, so this is raised on a best-effort basis from the application-quit message: keep the handler quick (save small state; do not block) and do not rely on it alone for critical data.</summary>
         event Action GameQuitting;
 
         // Domain hooks (e.g. contraband scans, NPC spawns) arrive in a later phase via an

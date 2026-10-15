@@ -10,8 +10,9 @@ namespace ASL
     /// <summary>
     /// Content-mod audio swaps (manifest <c>content.audio</c>) and the <c>listAudioNames</c> discovery log.
     /// A swap replaces <c>AudioSource.clip</c> on every AudioSource whose current clip is named
-    /// <c>target</c>. WAVs are decoded to managed floats at registration (pure C#, no Unity calls at boot);
-    /// the <c>AudioClip</c> is built lazily the first time a target is found. Not driven per frame:
+    /// <c>target</c>. The raw WAV bytes are kept (a few KB-MB each) and decoded to managed floats plus the
+    /// <c>AudioClip</c> lazily, the first time a target is actually found - so unused swaps cost no decoded
+    /// float[] memory and nothing is decoded at boot. Not driven per frame:
     /// <see cref="ContentRegistry"/> calls <see cref="Apply"/> on scene change and on a throttled poll.
     /// Limitation: one-shots played via <c>AudioSource.PlayOneShot(clip)</c> with a clip held in a script
     /// field are not reachable this way (there is no AudioSource.clip to repoint).
@@ -23,7 +24,7 @@ namespace ASL
             public string ModId;
             public string Target;
             public string Name;       // replacement clip name (file name without extension)
-            public WavData Wav;       // freed once the clip exists
+            public byte[] Raw;        // the .wav file bytes; freed once the clip exists
             public AudioClip Clip;
             public bool Disabled;
         }
@@ -47,15 +48,15 @@ namespace ASL
 
         public void RequestNameDump() => _dumpNames = true;
 
-        public void Register(string modId, string target, string name, WavData wav)
+        public void Register(string modId, string target, string name, byte[] wavBytes)
         {
             if (_byTarget.TryGetValue(target, out var prev))
             {
                 _log.LogWarning($"[content] audio target '{target}' from '{modId}' ignored: already replaced by '{prev.ModId}'.");
                 return;
             }
-            _byTarget[target] = new Swap { ModId = modId, Target = target, Name = name, Wav = wav };
-            _log.LogInfo($"[content] '{modId}' queued audio swap for '{target}' ({wav.FrameCount} frames, {wav.Channels}ch, {wav.SampleRate} Hz).");
+            _byTarget[target] = new Swap { ModId = modId, Target = target, Name = name, Raw = wavBytes };
+            _log.LogInfo($"[content] '{modId}' queued audio swap for '{target}' ({wavBytes.Length / 1024} KB, decoded when first needed).");
         }
 
         public void Apply()
@@ -108,8 +109,8 @@ namespace ASL
             if (swap.Clip != null) return swap.Clip;
             try
             {
-                swap.Clip = ModAssets.ClipFromWav(swap.Wav, swap.Name);
-                swap.Wav = null;
+                swap.Clip = ModAssets.ClipFromWav(WavDecoder.Decode(swap.Raw), swap.Name);   // decoded now, not at boot
+                swap.Raw = null;
                 return swap.Clip;
             }
             catch (Exception ex)

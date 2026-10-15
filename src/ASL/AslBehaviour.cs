@@ -144,6 +144,9 @@ namespace ASL
 
         // Safety: never leave ourselves registered (a stale entry could wedge the cursor free forever).
         private void OnDisable() => UnregisterCursorUser();
+
+        // BasePlugin.Unload is not reliably called on IL2CPP exit; this is the best-effort GameQuitting / OnUnload trigger.
+        private void OnApplicationQuit() { try { AslPlugin.Instance?.Shutdown(); } catch { } }
         private void OnDestroy() => UnregisterCursorUser();
 
         // Returns true if the local controller was found and the flag was set — callers retry until then.

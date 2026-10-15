@@ -19,7 +19,7 @@ namespace ASL
     /// Everything loaded is cached by absolute path; textures/sprites/clips are <c>HideAndDontSave</c>.
     /// The constructor touches nothing.
     /// </summary>
-    internal sealed class ModAssets : IAslAssets
+    internal sealed class ModAssets : IAslAssets, IDisposable
     {
         private readonly string _modId;
         private readonly string _modDirectory;
@@ -36,6 +36,28 @@ namespace ASL
             _modId = modId;
             _modDirectory = modDirectory;
             _log = log;
+        }
+
+        /// <summary>
+        /// Release (unload / hot reload): unload the AssetBundles this mod loaded (<c>Unload(true)</c>, also destroying
+        /// what was instantiated from them is the mod's job) and destroy the cached sprites, textures and clips.
+        /// Each object is guarded; the caches are emptied. Idempotent.
+        /// </summary>
+        public void Dispose()
+        {
+            foreach (var b in _bundles.Values) { try { if (b != null) b.Unload(true); } catch { } }
+            _bundles.Clear();
+            foreach (var o in _sprites.Values) DestroyQuietly(o);
+            _sprites.Clear();
+            foreach (var o in _textures.Values) DestroyQuietly(o);
+            _textures.Clear();
+            foreach (var o in _clips.Values) DestroyQuietly(o);
+            _clips.Clear();
+        }
+
+        private static void DestroyQuietly(UnityEngine.Object o)
+        {
+            try { if (o != null) UnityEngine.Object.Destroy(o); } catch { }
         }
 
         public string GetPath(string relativePath) => StorageNames.SafeJoin(_modDirectory, relativePath);

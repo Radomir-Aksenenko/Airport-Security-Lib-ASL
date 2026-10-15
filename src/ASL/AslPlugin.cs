@@ -70,11 +70,12 @@ namespace ASL
             Hooks = new HookManager(Harmony, Logger);
             Content = new ContentRegistry(Logger, Bus);
             Menu = new MenuManager();
-            Menu.VisibleChanged += visible => Bus.RaiseMenuVisibilityChanged(visible);
             Registry = new ModRegistry(Logger);
             CommandHub = new CommandRegistry(Logger);
             Keybinds = new KeybindManager(Logger, Bus);
             MenuUi = new NativeMenu(Logger, Menu, Keybinds);
+            // Subscribed AFTER NativeMenu (which hooks VisibleChanged in its ctor) so mods see MenuVisibilityChanged once the native menu has reacted.
+            Menu.VisibleChanged += visible => Bus.RaiseMenuVisibilityChanged(visible);
             UiApi = new UiManager(Logger);
             Net = new NetState(Logger, Harmony);
             PlayerControl.Init(Logger);
@@ -95,9 +96,24 @@ namespace ASL
 
         public override bool Unload()
         {
-            Bus?.RaiseGameQuitting();
-            _loader?.UnloadAll();
+            Shutdown();
             return true;
+        }
+
+        private bool _shutDown;
+
+        /// <summary>
+        /// Raises <c>GameQuitting</c> and unloads every mod, exactly once. Called from <c>AslBehaviour.OnApplicationQuit</c>
+        /// (BepInEx IL2CPP does not reliably call <see cref="Unload"/> on exit) and from <see cref="Unload"/>.
+        /// </summary>
+        internal void Shutdown()
+        {
+            if (_shutDown) return;
+            _shutDown = true;
+            try { Bus?.RaiseGameQuitting(); }
+            catch (Exception ex) { Logger?.LogError($"GameQuitting raise failed: {ex.Message}"); }
+            try { _loader?.UnloadAll(); }
+            catch (Exception ex) { Logger?.LogError($"Unloading mods failed: {ex.Message}"); }
         }
 
         /// <summary>Injects the MonoBehaviour that drives Update / SceneChanged / LocalPlayerChanged.</summary>
