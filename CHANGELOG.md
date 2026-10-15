@@ -6,6 +6,16 @@ All notable changes to **ASL — Airport Security Lib** are documented here. The
 
 ## [Unreleased] — 2.0 hardening (not yet verified in-game)
 
+- JSON UI layouts (`ui/*.json`): pure `LayoutParser` (`ASL.Core`, unit-tested) + `LayoutBuilder`; `ctx.Ui.LoadLayout`
+  and `RegisterAction` implemented; the manifest's top-level `ui` loads layouts for any mod kind, content mods
+  included (built-in actions `close`, `open:`, `toggle:`, `toast:`, `announce:`, `command:`; `bind: config:S.K`
+  two-way config binding; `toggleKey` registers a rebindable keybind). A mod's windows, HUDs and bindings are
+  destroyed on unload / hot reload.
+- F8 root: built-in **Mod Manager** (summary, per-mod state badge / error / description / dependencies,
+  Enable/Disable via `ASL.ModStates.json`, Reload for script mods) and **ASL** (version, FPS, per-mod
+  Update/LateUpdate/timer cost, UI demo, reset window positions) pages above the unchanged mod list.
+- F8 mod pages with `ctx.Config` entries (and `ShowInMenu`) get an auto-generated **Settings** page.
+
 - `ctx.Events.Update` / `LateUpdate`: a throwing handler is no longer switched off after 10 failing frames; it is
   retried with backoff (0.5 s ... 5 s) and returns to every-frame on the first success or a scene / player change.
 - Hot reload and unload now clear a mod's keybind `Pressed` handlers, localization/config subscriptions and cached

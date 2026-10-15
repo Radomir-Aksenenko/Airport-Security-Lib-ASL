@@ -284,6 +284,8 @@ namespace ASL
                 catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' OnUnload threw: {ex.Message}"); }
                 try { m.Services?.Release(); }
                 catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' release threw: {ex.Message}"); }
+                try { m.ContentRelease?.Invoke(); }
+                catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' UI release threw: {ex.Message}"); }
             }
             _loaded.Clear();
         }
@@ -320,6 +322,10 @@ namespace ASL
                     case ModKind.Content: LoadContentMod(manifest, dir); break;
                     default:              Fail(manifest, "could not determine mod kind - nothing to load.", LogLevel.Warning); break;
                 }
+
+                // Declarative windows listed in the manifest's top-level "ui" (any kind; content mods are handled in LoadContentMod).
+                if (c.Kind != ModKind.Content && c.Info.State == ModState.Loaded)
+                    LoadManifestUi(manifest, dir, c.Display, FindLoaded(manifest.Id));
             }
             catch (Exception ex)
             {
@@ -471,8 +477,10 @@ namespace ASL
 
             _content.RegisterContentV2(manifest, dir);   // audio / strings / listAudioNames (no-ops when absent)
 
-            _loaded.Add(new LoadedMod(manifest, null, null) { Info = _current });
+            var content = new LoadedMod(manifest, null, null) { Info = _current };
+            _loaded.Add(content);
             MarkLoaded();
+            LoadManifestUi(manifest, dir, string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name, content);
             _log.LogInfo($"  '{manifest.Id}': content mod loaded ({queued} texture swap(s) queued; applied on scene load).");
         }
 
@@ -501,6 +509,7 @@ namespace ASL
             var input = new ModInput(manifest.Id, display, section, _keys, modLog);
             var info = _current ?? ModInfo.From(manifest, "dll", dir, display);   // _current is only null if the registry is unavailable
             var services = ModServices.Create(info, display, modLog, _bus, _ui);
+            section.Config = services.Config as ModConfig;           // F8 "Settings" page (auto-UI for ctx.Config entries)
             services.Resources.Add(input.Release);   // this mod's keybind Pressed handlers go away with it
 
             IModHooks hooks = _hooks;
@@ -527,8 +536,44 @@ namespace ASL
                 // A mod that failed to load must not keep running half-initialised: drop whatever OnLoad registered.
                 try { services.Release(); } catch (Exception rex) { _log.LogWarning($"  '{manifest.Id}': releasing after failed OnLoad threw: {rex.Message}"); }
                 section.Controls.Clear();   // and the F8 rows it added before failing
+                section.Config = null;
                 return null;
             }
+        }
+
+        // Loads the layouts a manifest lists under "ui" through the mod's own ModUi. Code mods use the ModUi from their
+        // services (so named actions, config binds and release all work); content mods have no services, so they get a
+        // minimal ModUi (+ asset access for images) that is released with the mod. Never throws; one bad file never
+        // stops the others.
+        private void LoadManifestUi(ModManifest manifest, string dir, string display, LoadedMod lm)
+        {
+            var files = manifest.Ui;
+            if (files == null || files.Length == 0 || lm == null) return;
+            try
+            {
+                var ui = lm.Services?.Ui as ModUi;
+                if (ui == null)
+                {
+                    var modLog = BepInEx.Logging.Logger.CreateLogSource(display);
+                    ui = new ModUi(manifest.Id, display, dir, _ui, modLog);
+                    var assets = new ModAssets(manifest.Id, dir, modLog);
+                    ui.AttachStandalone(assets);
+                    lm.ContentRelease = () => { ui.ReleaseAll(); assets.Dispose(); };
+                }
+
+                foreach (var file in files)
+                {
+                    if (string.IsNullOrWhiteSpace(file)) continue;
+                    try
+                    {
+                        var w = ui.LoadLayout(file);
+                        if (w != null) _log.LogInfo($"  '{manifest.Id}': UI layout '{file}' loaded (window '{w.WindowId}').");
+                        else _log.LogWarning($"  '{manifest.Id}': UI layout '{file}' could not be loaded (see errors above).");
+                    }
+                    catch (Exception ex) { _log.LogError($"  '{manifest.Id}': UI layout '{file}' failed: {ex.Message}"); }
+                }
+            }
+            catch (Exception ex) { _log.LogError($"  '{manifest.Id}': loading UI layouts failed: {ex.Message}"); }
         }
 
         private void MarkLoaded()
@@ -593,11 +638,12 @@ namespace ASL
                 {
                     var why = c.Info.Error ?? "unknown error";
                     _log.LogWarning($"Reload of '{manifest.Id}' failed: {why}");
-                    try { _menu.EnsureSection(c.Display).Controls.Clear(); } catch { }   // stale rows of the old instance
+                    try { var st = _menu.EnsureSection(c.Display); st.Controls.Clear(); st.Config = null; } catch { }   // stale rows of the old instance
                     return (false, why);
                 }
 
                 _loaded.Insert(slot >= 0 && slot <= _loaded.Count ? slot : _loaded.Count, lm);
+                LoadManifestUi(manifest, c.Dir, c.Display, lm);   // the old windows went with the released services
 
                 // 3. Everything is loaded: tell the new instance (and its own event subscribers) like at startup.
                 try { lm.Instance.OnAllModsLoaded(); }
@@ -723,6 +769,9 @@ namespace ASL
 
         /// <summary>The per-mod services (null for content mods). Released when the mod unloads.</summary>
         public ModServices Services => (Context as ModContext)?.Services;
+
+        /// <summary>Content mods that declared "ui" layouts: releases their windows / asset cache on unload (null otherwise).</summary>
+        internal Action ContentRelease { get; set; }
 
         public LoadedMod(ModManifest manifest, AslMod instance, IModContext context)
         {

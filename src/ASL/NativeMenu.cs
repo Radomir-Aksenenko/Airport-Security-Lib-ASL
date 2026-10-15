@@ -33,6 +33,7 @@ namespace ASL
         private bool _built;
         private string _currentMod;
         private PageControl _currentPage;   // a toolkit sub-page (IModMenu.AddPage) shown under _currentMod
+        private PageControl _builtinPage;   // a built-in root page ("Mod Manager" / "ASL"), shown instead of the root list
 
         // Animated backdrop that mimics the Settings screen's flowing background.
         private RawImage _animBg;
@@ -70,6 +71,7 @@ namespace ASL
                 {
                     _currentMod = null;
                     _currentPage = null;
+                    _builtinPage = null;
                     if (!_built) Build();
                     else
                     {
@@ -212,8 +214,22 @@ namespace ASL
 
             int idx = 0;
 
+            if (_currentMod == null && _builtinPage != null)
+            {
+                // A built-in toolkit page: title + back rows, then the page fills the rest.
+                var bp = _builtinPage;
+                AddRow(bp.Label, false, null, idx++);
+                AddRow("< Back", true, () => { _builtinPage = null; Rebuild(); }, idx++);
+                UiPages.Show(_root, bp.Label, bp.Build, TopPad + idx * (RowH + RowGap), RowW + 180f);
+                ApplyPanelStyle();
+                return;
+            }
+
             if (_currentMod == null)
             {
+                // Built-in pages first, then the mod list exactly as before.
+                AddRow("Mod Manager", true, () => { _builtinPage = new PageControl { Label = "Mod Manager", Build = UiModManagerPage.Build }; Rebuild(); }, idx++);
+                AddRow("ASL", true, () => { _builtinPage = new PageControl { Label = "ASL", Build = UiAslPage.Build }; Rebuild(); }, idx++);
                 AddRow("— Mods —", false, null, idx++);
                 foreach (var sec in _registry.Sections)
                 {
@@ -305,6 +321,18 @@ namespace ASL
                             }
                         }
                     }
+                }
+
+                // Auto-generated settings for the mod's ctx.Config entries (IAslConfig.ShowInMenu).
+                var cfg = section?.Config;
+                if (UiConfigPage.HasPage(cfg))
+                {
+                    string owner = _currentMod;
+                    AddRow("Settings  >", true, () =>
+                    {
+                        _currentPage = new PageControl { Label = "Settings", Build = c => UiConfigPage.Build(cfg, owner, c) };
+                        Rebuild();
+                    }, idx++);
                 }
 
                 AddRow("Close", true, () => _registry.Visible = false, idx++);

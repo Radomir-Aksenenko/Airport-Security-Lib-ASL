@@ -8,7 +8,7 @@ namespace ASL
     /// <summary>
     /// Per-mod <see cref="IAslUi"/> (handed out as <c>ctx.Ui</c>). <see cref="Announce"/> delegates to the
     /// shared <see cref="UiManager"/> banner helper. The window / HUD / toast / dialog members live in
-    /// <c>ModUi.Toolkit.cs</c> (same class, partial); <c>LoadLayout</c> / <c>RegisterAction</c> belong to the layouts work.
+    /// <c>ModUi.Toolkit.cs</c> (same class, partial); <c>LoadLayout</c> (declarative JSON layouts) lives in <c>ModUi.Layout.cs</c>.
     /// </summary>
     internal sealed partial class ModUi : IAslUi
     {
@@ -44,8 +44,5 @@ namespace ASL
             _actions[name] = action;
         }
 
-        public IUiWindow LoadLayout(string relativeJsonPath) => throw NotYet("Ui.LoadLayout");
-
-        private static NotImplementedException NotYet(string what) => new NotImplementedException($"ASL 2.0: {what} not implemented yet");
     }
 }

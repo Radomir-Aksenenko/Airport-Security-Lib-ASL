@@ -48,6 +48,23 @@ namespace ASL
             return true;
         }
 
+        /// <summary>Forgets every remembered window position (deletes <c>ASL.Windows.json</c>). Windows pick their default place the next time they are created.</summary>
+        public static bool Reset()
+        {
+            _map = new Dictionary<string, Entry>(StringComparer.Ordinal);
+            try
+            {
+                var p = FilePath;
+                if (File.Exists(p)) File.Delete(p);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AslPlugin.Logger?.LogWarning($"[ui] could not reset ASL.Windows.json: {ex.Message}");
+                return false;
+            }
+        }
+
         public static void Set(string key, UiAnchor anchor, float x, float y)
         {
             Load();

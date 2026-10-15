@@ -49,6 +49,9 @@ namespace ASL
         {
             public string ModName;
             public readonly List<MenuControl> Controls = new();
+
+            /// <summary>The mod's config (set by the loader); when it has entries and <c>ShowInMenu</c> the F8 page shows a "Settings" row.</summary>
+            public ModConfig Config;
         }
     }
 

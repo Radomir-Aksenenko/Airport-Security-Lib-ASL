@@ -78,6 +78,7 @@ namespace ASL
         /// <summary>Destroys every window/HUD this mod created (mod unload / reload).</summary>
         internal void ReleaseAll()
         {
+            ReleaseLayoutState();
             var list = new List<UiWindow>(_windows.Values);
             _windows.Clear();
             foreach (var w in list) UiRuntime.DestroyWindow(w);
