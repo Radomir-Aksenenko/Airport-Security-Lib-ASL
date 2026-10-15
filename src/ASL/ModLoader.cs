@@ -520,7 +520,15 @@ namespace ASL
                 hooks = mh;
             }
 
-            var ctx = new ModContext(manifest.Id, display, dir, modLog, services, hooks, menu, input, _net);
+            IAslNet net = _net;
+            if (_net != null)
+            {
+                var tn = new TrackingNet(_net);
+                services.Resources.Add(tn.Release);   // this mod's net subscriptions / event handlers go away with it
+                net = tn;
+            }
+
+            var ctx = new ModContext(manifest.Id, display, dir, modLog, services, hooks, menu, input, net);
 
             try
             {
@@ -549,6 +557,17 @@ namespace ASL
         {
             var files = manifest.Ui;
             if (files == null || files.Length == 0 || lm == null) return;
+            // Mods load at plugin Load, before any scene / TMP settings / fonts: build the layouts once the UI runtime is
+            // Ready (first scene change or ~60 frames). A mod unloaded / reloaded meanwhile is skipped.
+            UiRuntime.RunWhenReady(() =>
+            {
+                if (!_loaded.Contains(lm)) return;
+                LoadManifestUiNow(manifest, dir, display, lm, files);
+            });
+        }
+
+        private void LoadManifestUiNow(ModManifest manifest, string dir, string display, LoadedMod lm, string[] files)
+        {
             try
             {
                 var ui = lm.Services?.Ui as ModUi;
@@ -730,10 +749,42 @@ namespace ASL
                         h = h * 31 + fi.LastWriteTimeUtc.Ticks;
                         h = h * 31 + fi.Length;
                     }
+                    // Also the mod's declarative UI layouts and translations: a change to ui/*.json (or the manifest's
+                    // "ui" files) or lang/*.json reloads the mod too (simplest correct: the new instance re-reads them).
+                    foreach (var f in DataFiles(c.Dir, c.Manifest))
+                    {
+                        var fi = new FileInfo(f);
+                        h = h * 31 + (fi.Exists ? fi.LastWriteTimeUtc.Ticks : 1);
+                        h = h * 31 + (fi.Exists ? fi.Length : 0);
+                    }
                 }
                 return h;
             }
             catch { return -1; }
+        }
+
+        // ui/*.json, lang/*.json and the manifest's own "ui" entries, sorted (stable fingerprint); never throws.
+        private static List<string> DataFiles(string dir, ModManifest manifest)
+        {
+            var list = new List<string>();
+            try
+            {
+                foreach (var sub in new[] { "ui", "lang" })
+                {
+                    var d = Path.Combine(dir, sub);
+                    if (Directory.Exists(d)) list.AddRange(Directory.GetFiles(d, "*.json"));
+                }
+                if (manifest?.Ui != null)
+                    foreach (var u in manifest.Ui)
+                    {
+                        if (string.IsNullOrWhiteSpace(u)) continue;
+                        var full = Path.Combine(dir, u);
+                        if (!list.Contains(full)) list.Add(full);
+                    }
+                list.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+            catch { }
+            return list;
         }
 
         private static string Sanitize(string s)

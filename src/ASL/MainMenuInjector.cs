@@ -29,6 +29,7 @@ namespace ASL
         {
             _log = log;
             _bus = events as EventBus;
+            _lastLang = Loc.CurrentLanguage();   // seed (may be null this early): a later different non-null value raises LanguageChanged
         }
 
         // Self-healing: called on the throttled poll. The main menu can be rebuilt without a scene-name
@@ -107,7 +108,6 @@ namespace ASL
             clone.SetActive(true);
 
             _modsButton = clone;
-            _lastLang = Loc.CurrentLanguage();
 
             _log.LogInfo("[menu] Added 'Mods' button to the main menu.");
             return true;
@@ -124,11 +124,12 @@ namespace ASL
             try
             {
                 var cur = Loc.CurrentLanguage();
-                if (cur == _lastLang) return;
-                bool first = _lastLang == null;
+                if (cur == null || cur == _lastLang) return;   // not known yet / unchanged
+                // _lastLang is seeded at Init (possibly null): the first real language that differs from the seed is a
+                // change too, so mods that already resolved their strings (against a null / default language) re-resolve.
                 _lastLang = cur;
                 if (_modsButton != null) UiUtil.SetLabel(_modsButton, Loc.Mods());
-                if (!first) _bus?.RaiseLanguageChanged(cur);   // not for the initial detection
+                _bus?.RaiseLanguageChanged(cur);
             }
             catch { }
         }

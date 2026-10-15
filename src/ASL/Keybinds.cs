@@ -27,15 +27,38 @@ namespace ASL
         }
 
         // Keybinds never fire while the player is typing in an ASL text field.
-        public bool WasPressed  => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKeyDown(Key));
-        public bool IsHeld      => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKey(Key));
-        public bool WasReleased => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKeyUp(Key));
+        // (Inline try/catch, no lambdas: these are polled every frame by mods and must not allocate a closure per read.)
+        public bool WasPressed
+        {
+            get
+            {
+                if (Key == KeyCode.None || UiRuntime.IsTextInputFocused) return false;
+                try { return Input.GetKeyDown(Key); } catch { return false; }
+            }
+        }
+
+        public bool IsHeld
+        {
+            get
+            {
+                if (Key == KeyCode.None || UiRuntime.IsTextInputFocused) return false;
+                try { return Input.GetKey(Key); } catch { return false; }
+            }
+        }
+
+        public bool WasReleased
+        {
+            get
+            {
+                if (Key == KeyCode.None || UiRuntime.IsTextInputFocused) return false;
+                try { return Input.GetKeyUp(Key); } catch { return false; }
+            }
+        }
 
         /// <summary>Drop every <see cref="Pressed"/> subscriber (the owning mod was released / hot-reloaded). A bind is per-mod namespaced, so all its subscribers belong to that mod.</summary>
         internal void ClearPressed() { Pressed = null; }
 
         internal void RaisePressed() { try { Pressed?.Invoke(); } catch { } }
-        private static bool Safe(Func<bool> f) { try { return f(); } catch { return false; } }
     }
 
     /// <summary>
@@ -235,6 +258,14 @@ namespace ASL
                 var sb = new StringBuilder();
                 sb.AppendLine("# ASL mod keybinds. <namespaced id> = <KeyCode>. Edit in-game (F8) or here.");
                 foreach (var b in _binds) sb.AppendLine(b.Id + " = " + b.Key.ToString());
+                // Keep the saved rebinds of mods that are not loaded right now (disabled in the Mod Manager, removed for a
+                // while...): dropping them would silently reset the player's keys.
+                foreach (var kv in _saved)
+                {
+                    bool loaded = false;
+                    for (int i = 0; i < _binds.Count; i++) if (_binds[i].Id == kv.Key) { loaded = true; break; }
+                    if (!loaded) sb.AppendLine(kv.Key + " = " + kv.Value.ToString());
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(_configPath));
                 File.WriteAllText(_configPath, sb.ToString());
             }

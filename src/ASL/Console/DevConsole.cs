@@ -23,7 +23,8 @@ namespace ASL
         private const float RebuildInterval = 0.1f;      // output text is rebuilt at most 10x/s
         private const int MaxChars = 14000;              // TMP mesh limit is ~16k visible glyphs: stay below
         private const int MaxDrainPerTick = 200;
-        private const int MaxQueued = 2000;
+        private const int MaxQueued = 2000;             // mirrored lines kept while the console is open
+        private const int MaxClosedQueued = 200;        // ... and while it is closed (oldest dropped; drained when it opens)
 
         private static ManualLogSource _log;
         private static CommandRegistry _reg;
@@ -50,17 +51,22 @@ namespace ASL
 
         // BepInEx log mirroring: the listener runs on whatever thread logs; it only enqueues.
         private static readonly ConcurrentQueue<string> LogQueue = new ConcurrentQueue<string>();
-        private static MirrorListener _listener;
+        private static MirrorListener _listener;         // registered once, lazily, and never removed (Listeners is not thread-safe to edit while logging)
+        private static volatile bool _mirrorOn;          // the on/off switch the listener reads
+        private static volatile bool _openFlag;          // mirror of IsOpen the listener thread may read
         private static int _queued;
 
         /// <summary>True while the console window is showing.</summary>
         public static bool IsOpen => _win != null && _win.IsOpen;
 
         /// <summary>True while BepInEx log lines are mirrored into the console.</summary>
-        public static bool Mirroring => _listener != null;
+        public static bool Mirroring => _mirrorOn;
 
         /// <summary>The toolkit facade ASL's own windows (console, <c>ui.demo</c>) are created through.</summary>
         public static ModUi Ui => _ui;
+
+        /// <summary>The console's own toggle keybind (shown on the F8 "ASL" page so it can be rebound); null if registration failed.</summary>
+        internal static IAslKeybind Bind => _bind;
 
         public static CommandHistory CommandHistory => History;
 
@@ -97,6 +103,7 @@ namespace ASL
             _scrollFrames = 3;
             _stripFrames = _bind != null && _bind.Key == KeyCode.BackQuote ? 3 : 0;
             _win.Open();
+            _openFlag = true;
             try { _input?.Focus(); } catch (Exception ex) { Report("focus", ex); }
         }
 
@@ -146,6 +153,7 @@ namespace ASL
 
         private static void OnClosed()
         {
+            _openFlag = false;
             try { if (_input != null) _input.Text = string.Empty; } catch { }
         }
 
@@ -199,15 +207,16 @@ namespace ASL
         {
             try
             {
+                // One permanent listener (added on first enable): adding / removing listeners while other threads log
+                // races with the logging; flipping a volatile flag does not.
                 if (on && _listener == null)
                 {
                     _listener = new MirrorListener();
                     BepInEx.Logging.Logger.Listeners.Add(_listener);
                 }
-                else if (!on && _listener != null)
+                _mirrorOn = on;
+                if (!on)
                 {
-                    BepInEx.Logging.Logger.Listeners.Remove(_listener);
-                    _listener = null;
                     while (LogQueue.TryDequeue(out _)) { }
                     Interlocked.Exchange(ref _queued, 0);
                 }
@@ -223,9 +232,12 @@ namespace ASL
             {
                 try
                 {
+                    if (!_mirrorOn) return;
                     string msg = e.Data?.ToString();
                     if (msg == null || msg.StartsWith("[console]", StringComparison.Ordinal)) return;   // our own prints: no feedback loop
-                    if (Volatile.Read(ref _queued) >= MaxQueued) return;
+                    // Bounded, drop-oldest: while the console is closed only a small tail is kept (it is drained on open).
+                    int limit = _openFlag ? MaxQueued : MaxClosedQueued;
+                    while (Volatile.Read(ref _queued) >= limit && LogQueue.TryDequeue(out _)) Interlocked.Decrement(ref _queued);
                     LogQueue.Enqueue("[" + e.Level + ":" + e.Source?.SourceName + "] " + msg);
                     Interlocked.Increment(ref _queued);
                 }
@@ -250,9 +262,9 @@ namespace ASL
 
         private static void Tick()
         {
-            if (_listener != null && !LogQueue.IsEmpty) Drain();
             var win = _win;
-            if (win == null || !win.IsOpen) return;
+            if (win == null || !win.IsOpen) return;   // closed: mirrored lines wait in the small bounded queue
+            if (_mirrorOn && !LogQueue.IsEmpty) Drain();
 
             try { TickOpen(); }
             catch (Exception ex) { Report("tick", ex); }

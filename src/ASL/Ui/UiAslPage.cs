@@ -23,6 +23,10 @@ namespace ASL
             page.AddLiveLabel(() => "FPS " + Profiler.Fps.ToString("0.0") + "     frame " + Profiler.FrameTimeMs.ToString("0.00") + " ms", Refresh);
             page.AddSeparator();
 
+            // ---- console keybind (rebindable here, like any mod keybind) ---------------------------
+            var consoleKey = DevConsole.Bind;
+            if (consoleKey != null) page.AddKeybind(consoleKey);
+
             // ---- per-mod cost ----------------------------------------------------------------------
             page.AddLabel("Mod cost per frame (average over the last second)", UiTextStyle.Muted);
             var ids = new List<ProfilerEntry>();
