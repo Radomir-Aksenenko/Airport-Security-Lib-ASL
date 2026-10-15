@@ -56,6 +56,9 @@ namespace ASL
         /// <summary>Shared dev-console command registry. Surfaced via <c>IModContext.Commands</c>.</summary>
         internal static CommandRegistry CommandHub { get; private set; }
 
+        /// <summary>The mod loader: load list and <c>Reload(modId)</c> for the Mod Manager / console.</summary>
+        internal static ModLoader Loader { get; private set; }
+
         private ModLoader _loader;
 
         public override void Load()
@@ -84,6 +87,7 @@ namespace ASL
             // mods/ lives next to the game executable so it is easy for players to find.
             var modsRoot = Path.Combine(Paths.GameRootPath, "mods");
             _loader = new ModLoader(Logger, modsRoot, Bus, Hooks, Content, Menu, Net, UiApi, Keybinds);
+            Loader = _loader;
             _loader.DiscoverAndLoad();
 
             Logger.LogInfo("Core online.");

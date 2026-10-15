@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Unit tests for ASL's pure logic (no game, no Unity). Not part of ASL.slnx: it must never deploy.
+    Run: tools/compile-check/build.sh (passes -p:GamePath=<stub game> because ASL.API references interop assemblies),
+    or: dotnet test tests/ASL.Tests -p:GamePath=<any folder with the stub BepInEx/interop layout>.
+    The Core logic is compiled in directly so the tests do not need ASL.dll (which needs BepInEx/Unity).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <DeployToGame>false</DeployToGame>
+    <RootNamespace>ASL.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/ASL/Core/**/*.cs" />
+    <ProjectReference Include="../../src/ASL.API/ASL.API.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

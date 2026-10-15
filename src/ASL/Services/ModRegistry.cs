@@ -94,6 +94,14 @@ namespace ASL
 
         // ---- services / messages ----------------------------------------------------------
 
+        /// <summary>Forget everything <paramref name="owner"/> published: its provided services and its topic subscriptions (unload / hot reload).</summary>
+        public void RemoveOwner(string owner)
+        {
+            if (owner == null) return;
+            _services.RemoveAll(s => s.owner == owner);
+            foreach (var list in _topics.Values) list.RemoveAll(s => s.Owner == owner);
+        }
+
         public void Provide(string owner, Type type, object service)
         {
             if (service == null) return;
@@ -115,6 +123,7 @@ namespace ASL
             if (topic == null || !_topics.TryGetValue(topic, out var list)) return;
             foreach (var sub in list.ToArray())
             {
+                if (!list.Contains(sub)) continue;   // unsubscribed (or its mod released) by an earlier handler
                 try { sub.Handler(payload); }
                 catch (Exception ex) { _log.LogError($"Mods.Publish('{topic}') handler of '{sub.Owner}' threw: {ex.Message}"); }
             }
@@ -144,25 +153,68 @@ namespace ASL
         }
     }
 
-    /// <summary>Per-mod <see cref="IAslMods"/> facade over the shared <see cref="ModRegistry"/> (remembers the owning mod id).</summary>
+    /// <summary>
+    /// Per-mod <see cref="IAslMods"/> facade over the shared <see cref="ModRegistry"/> (remembers the owning mod id).
+    /// Services this mod provides and topics it subscribes to are owned by it and dropped by <see cref="Release"/>;
+    /// its <c>AllModsLoaded</c> handlers are kept per mod so they can be released and re-raised after a hot reload.
+    /// </summary>
     internal sealed class ModMods : IAslMods
     {
         private readonly ModRegistry _reg;
         private readonly string _modId;
+        private readonly ManualLogSource _log;
+        private Action _allLoaded;
+        private bool _forwarding;
+        private bool _released;
 
-        public ModMods(ModRegistry reg, string modId)
+        public ModMods(ModRegistry reg, string modId, ManualLogSource log = null)
         {
             _reg = reg;
             _modId = modId;
+            _log = log ?? AslPlugin.Logger;
         }
 
         public IReadOnlyList<IModInfo> All => _reg.All;
         public bool IsLoaded(string modId) => _reg.IsLoaded(modId);
         public IModInfo Get(string modId) => _reg.Find(modId);
-        public void Provide<T>(T service) where T : class => _reg.Provide(_modId, typeof(T), service);
+        public void Provide<T>(T service) where T : class { if (!_released) _reg.Provide(_modId, typeof(T), service); }
         public T GetService<T>(string fromModId = null) where T : class => _reg.GetService(typeof(T), fromModId) as T;
         public void Publish(string topic, object payload = null) => _reg.Publish(topic, payload);
-        public IDisposable Subscribe(string topic, Action<object> handler) => _reg.Subscribe(_modId, topic, handler);
-        public event Action AllModsLoaded { add => _reg.AllModsLoaded += value; remove => _reg.AllModsLoaded -= value; }
+        public IDisposable Subscribe(string topic, Action<object> handler) => _released ? new NoSub() : _reg.Subscribe(_modId, topic, handler);
+
+        public event Action AllModsLoaded
+        {
+            add
+            {
+                if (_released) return;
+                _allLoaded += value;
+                if (!_forwarding) { _forwarding = true; _reg.AllModsLoaded += RaiseLocal; }
+            }
+            remove { _allLoaded -= value; }
+        }
+
+        /// <summary>Invoke this mod's own AllModsLoaded handlers (isolated). Also used after a hot reload.</summary>
+        public void RaiseLocal()
+        {
+            var ev = _allLoaded;
+            if (_released || ev == null) return;
+            foreach (var h in ev.GetInvocationList())
+            {
+                try { ((Action)h)(); }
+                catch (Exception ex) { _log?.LogError($"'{_modId}': Mods.AllModsLoaded handler threw: {ex.Message}"); }
+            }
+        }
+
+        /// <summary>Drop this mod's services, subscriptions and handlers. Idempotent.</summary>
+        public void Release()
+        {
+            if (_released) return;
+            _released = true;
+            _allLoaded = null;
+            if (_forwarding) { _forwarding = false; _reg.AllModsLoaded -= RaiseLocal; }
+            _reg.RemoveOwner(_modId);
+        }
+
+        private sealed class NoSub : IDisposable { public void Dispose() { } }
     }
 }

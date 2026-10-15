@@ -155,6 +155,20 @@ CSPROJ
   build "smoke:stub-surface" "$wd/smoke.csproj"
 fi
 
+# Unit tests (pure logic under src/ASL/Core; tests/ASL.Tests is deliberately NOT in ASL.slnx).
+if [ -f "$REPO/tests/ASL.Tests/ASL.Tests.csproj" ]; then
+  tlog="$LOGS/tests_ASL.Tests.log"
+  say "tests: tests/ASL.Tests"
+  if "$DOTNET" test "$REPO/tests/ASL.Tests/ASL.Tests.csproj" -c Release -v:minimal -p:GamePath="$GAME" -p:DeployToGame=false >"$tlog" 2>&1; then
+    SUMMARY+=("OK    tests:ASL.Tests  ($(grep -E 'Passed!|Passed:' "$tlog" | tail -1 | sed -E 's/^[[:space:]]+//'))")
+  else
+    FAILED+=("tests:ASL.Tests")
+    SUMMARY+=("FAIL  tests:ASL.Tests")
+    grep -E ' error |\[FAIL\]|Failed!|Assert\.' "$tlog" | sort -u | head -60
+    echo "(full log: $tlog)"
+  fi
+fi
+
 # ---------------------------------------------------------------- result
 say "summary"
 printf '%s\n' "${SUMMARY[@]}"

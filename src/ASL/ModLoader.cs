@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using ASL.Api;
+using ASL.Core;
 using BepInEx;
 using BepInEx.Logging;
 
@@ -14,20 +15,35 @@ namespace ASL
     /// by kind: <b>dll</b> (compiled AslMod), <b>script</b> (Roslyn-compiled .cs), or <b>content</b>
     /// (declarative, no-code). Every mod is isolated: a single mod throwing during discovery or
     /// load is logged and skipped, never aborting the others.
+    ///
+    /// ASL 2.0 loads in three phases: (1) parse EVERY manifest, (2) resolve dependencies / enabled state /
+    /// minimum ASL version into a deterministic load order (<see cref="DependencyResolver"/>), (3) load the
+    /// survivors in that order. Every mod — loaded, failed, disabled, skipped, content — has a registry
+    /// record with its <see cref="ModState"/> and an error text. Manifests without any v2 field behave exactly
+    /// as before (folder order, same log lines).
+    ///
+    /// Script mods can be reloaded at runtime (<see cref="Reload"/>), either on request (Mod Manager, console)
+    /// or automatically when the manifest says <c>"hotReload": true</c> (source mtimes polled once a second).
     /// </summary>
-    internal sealed class ModLoader
+    internal sealed class ModLoader : IFrameParticipant
     {
         private readonly ManualLogSource _log;
         private readonly string _modsRoot;
         private readonly IAslEvents _bus;
         private readonly IModHooks _hooks;
+        private readonly HookManager _hookMgr;
         private readonly ContentRegistry _content;
         private readonly MenuManager _menu;
         private readonly IAslNet _net;
         private readonly UiManager _ui;
         private readonly KeybindManager _keys;
         private readonly List<LoadedMod> _loaded = new();
+        private readonly List<Candidate> _candidates = new();
+        private readonly Dictionary<string, Candidate> _byId = new(StringComparer.Ordinal);
         private ModInfo _current;   // registry record of the mod currently being loaded (null between mods)
+        private bool _reloading;
+        private bool _watching;     // registered with the bus for hot-reload polling
+        private float _pollAccum;
 
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
@@ -36,12 +52,28 @@ namespace ASL
             AllowTrailingCommas = true,
         };
 
+        /// <summary>Everything the loader knows about one mod folder with a usable manifest.</summary>
+        private sealed class Candidate
+        {
+            public string Folder;
+            public string Dir;
+            public ModManifest Manifest;
+            public ModKind Kind;
+            public string Display;
+            public ModInfo Info;
+            public bool Blocked;            // the resolver refused it (disabled / missing dependency / ...): never loadable this session
+            public int ReloadCount;         // compile counter for unique script assembly names
+            public long SourceSignature;    // hot reload: signature of the sources at the last (re)load attempt
+            public long PendingSignature;   // hot reload: a change seen on the previous poll, waiting to settle
+        }
+
         public ModLoader(ManualLogSource log, string modsRoot, IAslEvents bus, IModHooks hooks, ContentRegistry content, MenuManager menu, IAslNet net, UiManager ui, KeybindManager keys)
         {
             _log = log;
             _modsRoot = modsRoot;
             _bus = bus;
             _hooks = hooks;
+            _hookMgr = hooks as HookManager;
             _content = content;
             _menu = menu;
             _net = net;
@@ -51,6 +83,13 @@ namespace ASL
 
         public IReadOnlyList<LoadedMod> Loaded => _loaded;
 
+        /// <summary>The loaded mod with this id (null if it is not currently loaded, or is a content mod without code).</summary>
+        public LoadedMod FindLoaded(string modId)
+        {
+            foreach (var m in _loaded) if (string.Equals(m.Manifest.Id, modId, StringComparison.Ordinal)) return m;
+            return null;
+        }
+
         public void DiscoverAndLoad()
         {
             if (!Directory.Exists(_modsRoot))
@@ -59,19 +98,165 @@ namespace ASL
                 _log.LogInfo($"Created mods folder: {_modsRoot}");
             }
 
+            try { ModStates.Init(_log); }
+            catch (Exception ex) { _log.LogWarning($"Mod enable/disable states unavailable: {ex.Message}"); }
+
             var dirs = Directory.GetDirectories(_modsRoot);
+            Array.Sort(dirs, StringComparer.OrdinalIgnoreCase);   // deterministic regardless of the file system
             _log.LogInfo($"Scanning mods/ : {dirs.Length} candidate folder(s) in {_modsRoot}");
 
+            // Phase 1: read every manifest.
             foreach (var dir in dirs)
             {
-                try { LoadOne(dir); }
+                try
+                {
+                    var c = ParseFolder(dir);
+                    if (c != null) _candidates.Add(c);
+                }
                 catch (Exception ex) { _log.LogError($"Mod folder '{Path.GetFileName(dir)}' failed to load: {ex}"); }
+            }
+
+            // Phase 2: dependencies, enabled state, versions -> load order.
+            var order = Plan();
+
+            // Phase 3: load in that order.
+            foreach (var c in order)
+            {
+                try { LoadCandidate(c); }
+                catch (Exception ex) { _log.LogError($"Mod folder '{c.Folder}' failed to load: {ex}"); }
             }
 
             _log.LogInfo($"Mod loading complete: {_loaded.Count} mod(s) active.");
 
+            StartWatchingIfNeeded();
             RaiseAllModsLoaded();
         }
+
+        // ---- phase 1: manifests -------------------------------------------------------------
+
+        private Candidate ParseFolder(string dir)
+        {
+            var folderName = Path.GetFileName(dir);
+            var manifestPath = Path.Combine(dir, "manifest.json");
+            if (!File.Exists(manifestPath))
+            {
+                _log.LogWarning($"Skipping '{folderName}': no manifest.json.");
+                return null;
+            }
+
+            ModManifest manifest;
+            try { manifest = JsonSerializer.Deserialize<ModManifest>(File.ReadAllText(manifestPath), JsonOpts); }
+            catch (Exception ex)
+            {
+                _log.LogError($"Skipping '{folderName}': invalid manifest.json ({ex.Message}).");
+                RegisterBroken(folderName, dir, $"invalid manifest.json ({ex.Message})");
+                return null;
+            }
+
+            if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id))
+            {
+                _log.LogError($"Skipping '{folderName}': manifest is missing the required 'id' field.");
+                RegisterBroken(folderName, dir, "manifest is missing the required 'id' field");
+                return null;
+            }
+
+            var kind = ResolveKind(manifest, dir);
+            var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
+            var info = ModInfo.From(manifest, KindName(kind), dir, display);
+            AslPlugin.Registry?.Add(info);
+
+            return new Candidate { Folder = folderName, Dir = dir, Manifest = manifest, Kind = kind, Display = display, Info = info };
+        }
+
+        // ---- phase 2: plan --------------------------------------------------------------------
+
+        // Runs the resolver, records the verdict on every registry entry and returns the candidates to load, in order.
+        private List<Candidate> Plan()
+        {
+            var order = new List<Candidate>();
+            ResolveResult rr = null;
+            try
+            {
+                var nodes = new List<ResolverMod>(_candidates.Count);
+                foreach (var c in _candidates)
+                {
+                    var m = c.Manifest;
+                    nodes.Add(new ResolverMod
+                    {
+                        Id = m.Id,
+                        Version = m.Version,
+                        Folder = c.Folder,
+                        Dependencies = m.Dependencies,
+                        OptionalDependencies = m.OptionalDependencies,
+                        LoadAfter = m.LoadAfter,
+                        LoadBefore = m.LoadBefore,
+                        MinAslVersion = m.MinAslVersion,
+                        Disabled = !ModStates.IsEnabled(m.Id),
+                        Tag = c,
+                    });
+                }
+                rr = DependencyResolver.Resolve(nodes, AslVersion.Current);
+            }
+            catch (Exception ex)
+            {
+                // A resolver bug must never stop mods from loading: fall back to plain folder order.
+                _log.LogError($"Dependency resolution failed ({ex.Message}); loading every mod in folder order.");
+            }
+
+            if (rr == null)
+            {
+                foreach (var c in _candidates) { Index(c); order.Add(c); }
+                return order;
+            }
+
+            foreach (var w in rr.Warnings) _log.LogWarning($"Mod ordering: {w}");
+
+            foreach (var r in rr.All)
+            {
+                var c = (Candidate)r.Mod.Tag;
+                if (r.State == ResolvedState.Load) { Index(c); continue; }
+
+                c.Blocked = true;
+                if (!_byId.ContainsKey(c.Manifest.Id) && r.State != ResolvedState.Failed) _byId[c.Manifest.Id] = c;
+                ApplyVerdict(c, r);
+            }
+
+            foreach (var r in rr.LoadOrder) order.Add((Candidate)r.Mod.Tag);
+            return order;
+        }
+
+        private void Index(Candidate c)
+        {
+            if (!_byId.ContainsKey(c.Manifest.Id)) _byId[c.Manifest.Id] = c;
+        }
+
+        private void ApplyVerdict(Candidate c, ResolvedMod r)
+        {
+            var info = c.Info;
+            var id = c.Manifest.Id;
+            switch (r.State)
+            {
+                case ResolvedState.Disabled:
+                    info.State = ModState.Disabled;
+                    _log.LogInfo($"Mod '{c.Display}' (id={id}) is disabled - not loading.");
+                    break;
+                case ResolvedState.MissingDependency:
+                    info.State = ModState.MissingDependency;
+                    _log.LogWarning($"Skipping mod '{c.Display}' (id={id}): {r.Reason}.");
+                    break;
+                case ResolvedState.Incompatible:
+                    info.State = ModState.Incompatible;
+                    _log.LogWarning($"Skipping mod '{c.Display}' (id={id}): {r.Reason}.");
+                    break;
+                default:
+                    info.State = ModState.Failed;
+                    _log.LogError($"Mod '{c.Display}' (id={id}) cannot load: {r.Reason}.");
+                    break;
+            }
+            info.Error = r.Reason;
+        }
+
+        // ---- lifecycle events -------------------------------------------------------------------
 
         // Every mod's OnLoad has run: tell each code mod (isolated per mod), then raise the events.
         private void RaiseAllModsLoaded()
@@ -90,51 +275,33 @@ namespace ASL
 
         public void UnloadAll()
         {
+            if (_watching) { _watching = false; (_bus as EventBus)?.Unregister((IFrameParticipant)this); }
             foreach (var m in _loaded)
             {
                 try { m.Instance?.OnUnload(); }
                 catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' OnUnload threw: {ex.Message}"); }
+                m.Services?.Release();
             }
             _loaded.Clear();
         }
 
-        private void LoadOne(string dir)
+        // ---- phase 3: load one mod --------------------------------------------------------------
+
+        private void LoadCandidate(Candidate c)
         {
-            var folderName = Path.GetFileName(dir);
-            var manifestPath = Path.Combine(dir, "manifest.json");
-            if (!File.Exists(manifestPath))
-            {
-                _log.LogWarning($"Skipping '{folderName}': no manifest.json.");
-                return;
-            }
+            var manifest = c.Manifest;
+            var dir = c.Dir;
+            _log.LogInfo($"Loading mod '{c.Display}' v{manifest.Version} [{c.Kind.ToString().ToLowerInvariant()}] (id={manifest.Id})");
 
-            ModManifest manifest;
-            try { manifest = JsonSerializer.Deserialize<ModManifest>(File.ReadAllText(manifestPath), JsonOpts); }
-            catch (Exception ex)
-            {
-                _log.LogError($"Skipping '{folderName}': invalid manifest.json ({ex.Message}).");
-                RegisterBroken(folderName, dir, $"invalid manifest.json ({ex.Message})");
-                return;
-            }
+            if (c.Kind == ModKind.Script && manifest.HotReload) c.SourceSignature = Signature(c);
 
-            if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id))
-            {
-                _log.LogError($"Skipping '{folderName}': manifest is missing the required 'id' field.");
-                RegisterBroken(folderName, dir, "manifest is missing the required 'id' field");
-                return;
-            }
-
-            var kind = ResolveKind(manifest, dir);
-            var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
-            _log.LogInfo($"Loading mod '{display}' v{manifest.Version} [{kind}] (id={manifest.Id})");
-
-            _current = AslPlugin.Registry?.Add(ModInfo.From(manifest, KindName(kind), dir, display));
+            _current = c.Info;
             try
             {
-                switch (kind)
+                switch (c.Kind)
                 {
                     case ModKind.Dll:     LoadDllMod(manifest, dir); break;
-                    case ModKind.Script:  LoadScriptMod(manifest, dir); break;
+                    case ModKind.Script:  LoadScriptMod(c); break;
                     case ModKind.Content: LoadContentMod(manifest, dir); break;
                     default:              Fail(manifest, "could not determine mod kind - nothing to load.", LogLevel.Warning); break;
                 }
@@ -201,28 +368,46 @@ namespace ASL
             try { asm = Assembly.LoadFrom(dllPath); }
             catch (Exception ex) { Fail(manifest, $"failed to load assembly {Path.GetFileName(dllPath)}: {ex.Message}"); return; }
 
-            InstantiateAndLoad(asm, manifest, dir);
+            var lm = InstantiateAndLoad(asm, manifest, dir, false);
+            if (lm != null) _loaded.Add(lm);
         }
 
         // ---- Script mods (Roslyn) --------------------------------------------------------
 
-        private void LoadScriptMod(ModManifest manifest, string dir)
+        private static string[] ScriptFiles(string dir, ModManifest manifest)
         {
-            string[] scripts;
             if (!string.IsNullOrWhiteSpace(manifest.Entry) && File.Exists(Path.Combine(dir, manifest.Entry)))
-                scripts = new[] { Path.Combine(dir, manifest.Entry) };
-            else
-                scripts = Directory.GetFiles(dir, "*.cs");
+                return new[] { Path.Combine(dir, manifest.Entry) };
+            return Directory.GetFiles(dir, "*.cs");
+        }
 
-            if (scripts.Length == 0) { Fail(manifest, "type=script but no .cs file found."); return; }
+        // Compile + instantiate a script mod. Returns the loaded mod, or null after recording the failure.
+        private LoadedMod LoadScript(Candidate c, bool reload)
+        {
+            var manifest = c.Manifest;
+            var dir = c.Dir;
+            var scripts = ScriptFiles(dir, manifest);
+
+            if (scripts.Length == 0) { Fail(manifest, "type=script but no .cs file found."); return null; }
 
             var interopDir = Path.Combine(Paths.GameRootPath, "BepInEx", "interop");
-            Assembly asm;
-            try { asm = ScriptLoader.Compile($"ScriptMod_{Sanitize(manifest.Id)}", scripts, interopDir, _log); }
-            catch (Exception ex) { Fail(manifest, $"script compilation crashed: {ex.Message}"); return; }
+            // The first compile keeps the historical assembly name; recompiles need a fresh one (a second in-memory
+            // assembly with the same name cannot be told apart from the first by the runtime).
+            var asmName = $"ScriptMod_{Sanitize(manifest.Id)}" + (c.ReloadCount > 0 ? $"_r{c.ReloadCount}" : "");
+            c.ReloadCount++;
 
-            if (asm == null) { Fail(manifest, "script did not compile (see errors above)."); return; }
-            InstantiateAndLoad(asm, manifest, dir);
+            Assembly asm;
+            try { asm = ScriptLoader.Compile(asmName, scripts, interopDir, _log); }
+            catch (Exception ex) { Fail(manifest, $"script compilation crashed: {ex.Message}"); return null; }
+
+            if (asm == null) { Fail(manifest, "script did not compile (see errors above)."); return null; }
+            return InstantiateAndLoad(asm, manifest, dir, reload);
+        }
+
+        private void LoadScriptMod(Candidate c)
+        {
+            var lm = LoadScript(c, false);
+            if (lm != null) _loaded.Add(lm);
         }
 
         // ---- Content mods (no code) ------------------------------------------------------
@@ -256,46 +441,61 @@ namespace ASL
 
             _content.RegisterContentV2(manifest, dir);   // audio / strings / listAudioNames (no-ops when absent)
 
-            _loaded.Add(new LoadedMod(manifest, null, null));
+            _loaded.Add(new LoadedMod(manifest, null, null) { Info = _current });
             MarkLoaded();
             _log.LogInfo($"  '{manifest.Id}': content mod loaded ({queued} texture swap(s) queued; applied on scene load).");
         }
 
         // ---- Shared instantiation (dll + script) -----------------------------------------
 
-        private void InstantiateAndLoad(Assembly asm, ModManifest manifest, string dir)
+        // Builds the mod's services + context, runs OnLoad and returns the LoadedMod (null on failure; the failure is
+        // recorded on _current). Does NOT add to _loaded — the caller decides where it goes.
+        private LoadedMod InstantiateAndLoad(Assembly asm, ModManifest manifest, string dir, bool reload)
         {
             Type modType = null;
             foreach (var t in SafeGetTypes(asm))
             {
                 if (t != null && !t.IsAbstract && typeof(AslMod).IsAssignableFrom(t)) { modType = t; break; }
             }
-            if (modType == null) { Fail(manifest, "no public AslMod subclass found."); return; }
+            if (modType == null) { Fail(manifest, "no public AslMod subclass found."); return null; }
 
             AslMod instance;
             try { instance = (AslMod)Activator.CreateInstance(modType); }
-            catch (Exception ex) { Fail(manifest, $"failed to instantiate {modType.Name}: {ex.Message}"); return; }
+            catch (Exception ex) { Fail(manifest, $"failed to instantiate {modType.Name}: {ex.Message}"); return null; }
 
             var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
             var modLog = BepInEx.Logging.Logger.CreateLogSource(display);
             var section = _menu.EnsureSection(display);              // one section shared by Menu + Input
+            if (reload) section.Controls.Clear();                     // the reloaded mod re-adds its rows in OnLoad
             var menu = new ModMenu(section);
             var input = new ModInput(manifest.Id, display, section, _keys, modLog);
             var info = _current ?? ModInfo.From(manifest, "dll", dir, display);   // _current is only null if the registry is unavailable
             var services = ModServices.Create(info, display, modLog, _bus, _ui);
-            var ctx = new ModContext(manifest.Id, display, dir, modLog, services, _hooks, menu, input, _net);
+
+            IModHooks hooks = _hooks;
+            if (_hookMgr != null)
+            {
+                var mh = new ModHooks(_hookMgr, manifest.Id);
+                services.Resources.Add(mh.Release);   // this mod's hook callbacks go away with it
+                hooks = mh;
+            }
+
+            var ctx = new ModContext(manifest.Id, display, dir, modLog, services, hooks, menu, input, _net);
 
             try
             {
                 instance.OnLoad(ctx);
-                _loaded.Add(new LoadedMod(manifest, instance, ctx));
                 MarkLoaded();
                 _log.LogInfo($"  '{manifest.Id}': loaded OK.");
+                return new LoadedMod(manifest, instance, ctx) { Info = info };
             }
             catch (Exception ex)
             {
                 _log.LogError($"  '{manifest.Id}': OnLoad threw: {ex}");
                 if (_current != null) { _current.State = ModState.Failed; _current.Error = "OnLoad threw: " + ex.Message; }
+                // A mod that failed to load must not keep running half-initialised: drop whatever OnLoad registered.
+                try { services.Release(); } catch (Exception rex) { _log.LogWarning($"  '{manifest.Id}': releasing after failed OnLoad threw: {rex.Message}"); }
+                return null;
             }
         }
 
@@ -304,6 +504,157 @@ namespace ASL
             if (_current == null) return;
             _current.State = ModState.Loaded;
             _current.Error = null;
+        }
+
+        // ---- hot reload (script mods) ------------------------------------------------------
+
+        /// <summary>True if <paramref name="modId"/> is a script mod that <see cref="Reload"/> can act on (loaded, or failed after it started loading).</summary>
+        public bool CanReload(string modId)
+        {
+            return modId != null && _byId.TryGetValue(modId, out var c) && c.Kind == ModKind.Script && !c.Blocked;
+        }
+
+        /// <summary>
+        /// Reload a script mod: <c>OnUnload</c>, release every resource it created (timers, event handlers, hooks,
+        /// commands, windows, ...), recompile its sources, create a new instance with fresh services, run
+        /// <c>OnLoad</c> then <c>OnAllModsLoaded</c>. A mod that failed to compile (or whose OnLoad threw) can be
+        /// reloaded again after fixing it. Never throws. Main thread only.
+        /// </summary>
+        /// <returns><c>ok</c> and a human-readable message (the failure reason when not ok).</returns>
+        public (bool ok, string message) Reload(string modId)
+        {
+            if (string.IsNullOrWhiteSpace(modId)) return (false, "no mod id given");
+            if (_reloading) return (false, "another reload is already in progress");
+            if (!_byId.TryGetValue(modId, out var c)) return (false, $"no mod with id '{modId}'");
+            if (c.Kind != ModKind.Script) return (false, $"'{modId}' is a {KindName(c.Kind)} mod; only script mods can be reloaded");
+            if (c.Blocked) return (false, $"'{modId}' did not load this session ({c.Info.State}: {c.Info.Error}); fix that and restart");
+
+            _reloading = true;
+            var prevCurrent = _current;
+            try
+            {
+                var manifest = c.Manifest;
+                _log.LogInfo($"Reloading mod '{c.Display}' (id={manifest.Id})");
+
+                // 1. Tear the old instance down (OnUnload first so it can still use its services, then release).
+                int slot = -1;
+                for (int i = 0; i < _loaded.Count; i++)
+                    if (ReferenceEquals(_loaded[i].Info, c.Info) || string.Equals(_loaded[i].Manifest.Id, manifest.Id, StringComparison.Ordinal)) { slot = i; break; }
+                if (slot >= 0)
+                {
+                    var old = _loaded[slot];
+                    try { old.Instance?.OnUnload(); }
+                    catch (Exception ex) { _log.LogError($"'{manifest.Id}' OnUnload threw: {ex.Message}"); }
+                    try { old.Services?.Release(); }
+                    catch (Exception ex) { _log.LogError($"'{manifest.Id}' release threw: {ex.Message}"); }
+                    _loaded.RemoveAt(slot);
+                }
+
+                c.Info.State = ModState.Failed;
+                c.Info.Error = "Reload did not finish.";
+                if (manifest.HotReload) { c.SourceSignature = Signature(c); c.PendingSignature = 0; }
+
+                // 2. Recompile and load the new one.
+                _current = c.Info;
+                var lm = LoadScript(c, true);
+                if (lm == null)
+                {
+                    var why = c.Info.Error ?? "unknown error";
+                    _log.LogWarning($"Reload of '{manifest.Id}' failed: {why}");
+                    return (false, why);
+                }
+
+                _loaded.Insert(slot >= 0 && slot <= _loaded.Count ? slot : _loaded.Count, lm);
+
+                // 3. Everything is loaded: tell the new instance (and its own event subscribers) like at startup.
+                try { lm.Instance.OnAllModsLoaded(); }
+                catch (Exception ex) { _log.LogError($"'{manifest.Id}' OnAllModsLoaded threw: {ex}"); }
+                lm.Services?.RaiseAllModsLoaded();
+
+                _log.LogInfo($"Reloaded '{c.Display}' v{manifest.Version}.");
+                return (true, $"reloaded '{c.Display}'");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"Reload of '{modId}' crashed: {ex}");
+                if (c.Info != null) { c.Info.State = ModState.Failed; c.Info.Error = "reload crashed: " + ex.Message; }
+                return (false, "reload crashed: " + ex.Message);
+            }
+            finally
+            {
+                _current = prevCurrent;
+                _reloading = false;
+            }
+        }
+
+        // Hot-reload watching: script mods with "hotReload": true are polled for source changes once a second.
+        private void StartWatchingIfNeeded()
+        {
+            if (_watching) return;
+            bool any = false;
+            foreach (var c in _candidates)
+                if (c.Kind == ModKind.Script && c.Manifest.HotReload && !c.Blocked) { any = true; break; }
+            if (!any) return;
+
+            var bus = _bus as EventBus;
+            if (bus == null) return;
+            bus.Register((IFrameParticipant)this);
+            _watching = true;
+            _log.LogInfo("Hot reload: watching script mods that set \"hotReload\": true.");
+        }
+
+        void IFrameParticipant.FrameUpdate(float deltaTime, float unscaledDeltaTime)
+        {
+            _pollAccum += unscaledDeltaTime;
+            if (_pollAccum < 1f) return;
+            _pollAccum = 0f;
+            try { PollSources(); }
+            catch (Exception ex) { _log.LogError($"Hot reload poll failed: {ex.Message}"); }
+        }
+
+        void IFrameParticipant.FrameLateUpdate() { }
+
+        private void PollSources()
+        {
+            if (_reloading) return;
+            for (int i = 0; i < _candidates.Count; i++)
+            {
+                var c = _candidates[i];
+                if (c.Kind != ModKind.Script || !c.Manifest.HotReload || c.Blocked) continue;
+
+                long sig = Signature(c);
+                if (sig == c.SourceSignature) { c.PendingSignature = 0; continue; }
+
+                // Reload only once the change has settled for a full poll (editors often write in several steps).
+                if (sig != c.PendingSignature) { c.PendingSignature = sig; continue; }
+
+                c.PendingSignature = 0;
+                c.SourceSignature = sig;   // set before reloading so a failing compile is not retried until the next edit
+                _log.LogInfo($"[hotReload] '{c.Manifest.Id}' sources changed.");
+                var r = Reload(c.Manifest.Id);
+                if (!r.ok) _log.LogWarning($"[hotReload] '{c.Manifest.Id}': {r.message}");
+            }
+        }
+
+        // Cheap fingerprint of a script mod's source files (count + mtimes + sizes). -1 if the folder is unreadable.
+        private static long Signature(Candidate c)
+        {
+            try
+            {
+                var files = ScriptFiles(c.Dir, c.Manifest);
+                long h = files.Length;
+                unchecked
+                {
+                    foreach (var f in files)
+                    {
+                        var fi = new FileInfo(f);
+                        h = h * 31 + fi.LastWriteTimeUtc.Ticks;
+                        h = h * 31 + fi.Length;
+                    }
+                }
+                return h;
+            }
+            catch { return -1; }
         }
 
         private static string Sanitize(string s)
@@ -333,6 +684,12 @@ namespace ASL
         public ModManifest Manifest { get; }
         public AslMod Instance { get; }
         public IModContext Context { get; }
+
+        /// <summary>The registry record for this mod (state, error, ...).</summary>
+        public ModInfo Info { get; internal set; }
+
+        /// <summary>The per-mod services (null for content mods). Released when the mod unloads.</summary>
+        public ModServices Services => (Context as ModContext)?.Services;
 
         public LoadedMod(ModManifest manifest, AslMod instance, IModContext context)
         {
