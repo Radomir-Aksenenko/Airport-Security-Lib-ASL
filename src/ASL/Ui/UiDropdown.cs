@@ -126,7 +126,7 @@ namespace ASL
 
         public override void Poll()
         {
-            if (!_hs.Update(Host, _fieldRt, Interactable)) return;
+            if (!_hs.Update(Host, this, _fieldRt, Interactable)) return;
             int state = _hs.Pressed ? 2 : (_hs.Hover ? 1 : 0);
             if (state == _applied) return;
             _applied = state;
@@ -162,7 +162,7 @@ namespace ASL
             var opts = d.Options;
             if (opts == null || opts.Length == 0) return;
             var p = new UiPopup { Dropdown = d, OpenedFrame = Time.frameCount };
-            try { p.Build(d, opts); Current = p; }
+            try { p.Build(d, opts); Current = p; UiRuntime.MarkHoverDirty(); }
             catch (Exception ex)
             {
                 d.Host.Owner.Report("dropdown popup", ex);
@@ -174,7 +174,7 @@ namespace ASL
         {
             var p = Current;
             Current = null;
-            if (p != null) p.Destroy();
+            if (p != null) { p.Destroy(); UiRuntime.MarkHoverDirty(); }
         }
 
         private void Build(UiDropdown d, string[] opts)
@@ -226,22 +226,26 @@ namespace ASL
                 b.LeftAlign();
             }
 
-            // Place under the field (flip above when there is no room), in screen space via world coordinates.
-            float s = fieldRt.lossyScale.x;
+            // Place under the field (flip above when there is no room). Everything is computed in SCREEN pixels from the
+            // field's world corners and converted with the reference scale derived from the screen size, then written as an
+            // anchoredPosition from the canvas' bottom-left corner (anchors 0,0): independent of whether this brand-new
+            // canvas has applied its CanvasScaler yet and of the screen resolution.
+            float s = UiRuntime.RefScale();
             var bl = fieldRt.TransformPoint(new Vector3(fr.xMin, fr.yMin, 0f));
             var tl = fieldRt.TransformPoint(new Vector3(fr.xMin, fr.yMax, 0f));
             float x = bl.x;
             if (x + w * s > Screen.width) x = Screen.width - w * s;
             if (x < 0f) x = 0f;
-            if (bl.y - h * s - 4f * s >= 0f)
+            float below = 4f * s;
+            if (bl.y - h * s - below >= 0f)
             {
                 Panel.pivot = new Vector2(0f, 1f);
-                Panel.position = new Vector3(x, bl.y - 4f * s, 0f);
+                Panel.anchoredPosition = new Vector2(x / s, (bl.y - below) / s);
             }
             else
             {
                 Panel.pivot = new Vector2(0f, 0f);
-                Panel.position = new Vector3(x, tl.y + 4f * s, 0f);
+                Panel.anchoredPosition = new Vector2(x / s, (tl.y + below) / s);
             }
             Host.Repoll = 3;
         }

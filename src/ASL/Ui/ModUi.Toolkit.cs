@@ -72,16 +72,26 @@ namespace ASL
 
         private void Guard(string what, Action a)
         {
+            if (_released) return;   // a released (unloaded / reloaded) mod must not open new dialogs
             try { a(); } catch (Exception ex) { Owner.Report(what, ex); }
         }
 
-        /// <summary>Destroys every window/HUD this mod created (mod unload / reload).</summary>
+        /// <summary>
+        /// Destroys every window / HUD / open dialog this mod created (mod unload / reload). Dialogs are destroyed
+        /// WITHOUT firing their callbacks (the mod is going away); destroying a window recomputes the cursor / input
+        /// block reasons, so nothing is left stuck. Wired to <c>ModServices.Releasing</c> (<see cref="Attach"/>) and to
+        /// the content-mod release in the loader.
+        /// </summary>
         internal void ReleaseAll()
         {
             ReleaseLayoutState();
             var list = new List<UiWindow>(_windows.Values);
             _windows.Clear();
-            foreach (var w in list) UiRuntime.DestroyWindow(w);
+            foreach (var w in list) { try { UiRuntime.DestroyWindow(w); } catch (Exception ex) { Owner.Report("window release", ex); } }
+
+            var dialogs = new List<UiWindow>(Owner.Dialogs);
+            Owner.Dialogs.Clear();
+            foreach (var d in dialogs) { try { UiRuntime.DestroyWindow(d); } catch (Exception ex) { Owner.Report("dialog release", ex); } }
         }
     }
 }

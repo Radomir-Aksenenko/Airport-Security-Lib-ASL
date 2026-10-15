@@ -21,7 +21,19 @@ namespace ASL
                 RememberPosition = false, CloseOnEscape = true,
             };
             string id = "__dialog" + (++_counter);
-            return UiWindow.Create(owner, owner.ModId + "/" + id, id, title, opt, theme, false, true);
+            var w = UiWindow.Create(owner, owner.ModId + "/" + id, id, title, opt, theme, false, true);
+            owner.Dialogs.Add(w);   // tracked so ModUi.ReleaseAll can destroy it (without callbacks) on mod unload / reload
+            return w;
+        }
+
+        // Long messages go into a scroll view (the buttons below stay on screen); short ones stay a plain label.
+        private static void AddMessage(UiWindow w, string message)
+        {
+            message = message ?? string.Empty;
+            int lines = 1;
+            for (int i = 0; i < message.Length; i++) if (message[i] == '\n') lines++;
+            if (message.Length > 360 || lines > 8) w.AddScroll(320f).AddLabel(message);
+            else w.AddLabel(message);
         }
 
         private static void Finish(UiWindow w, UiOwner owner, ref bool done, Action cb)
@@ -36,7 +48,7 @@ namespace ASL
         {
             var w = Make(owner, theme, title, 520f);
             bool done = false;
-            w.AddLabel(message ?? string.Empty);
+            AddMessage(w, message);
             w.AddSpacer(6f);
             var row = w.AddRow(12f);
             row.AddSpacer(0f).SetFlexible(1f);
@@ -53,7 +65,7 @@ namespace ASL
         {
             var w = Make(owner, theme, title, 520f);
             bool done = false;
-            w.AddLabel(message ?? string.Empty);
+            AddMessage(w, message);
             w.AddSpacer(6f);
             var row = w.AddRow(12f);
             row.AddSpacer(0f).SetFlexible(1f);
@@ -68,7 +80,7 @@ namespace ASL
         {
             var w = Make(owner, theme, title, 560f);
             bool done = false;
-            if (!string.IsNullOrEmpty(message)) w.AddLabel(message);
+            if (!string.IsNullOrEmpty(message)) AddMessage(w, message);
             var input = w.AddInput(string.Empty, initial ?? string.Empty);
             w.AddSpacer(6f);
             var row = w.AddRow(12f);

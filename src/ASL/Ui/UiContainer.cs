@@ -168,61 +168,115 @@ namespace ASL
 
         // ---- IUiContainer ---------------------------------------------------------------------
 
-        public IUiText AddLabel(string text, UiTextStyle style = UiTextStyle.Body) => Add(new UiText(Host, ContentRt, text, style));
+        // Every widget is built through Guarded: a constructor that throws (a missing sprite, a Unity/TMP call that
+        // fails on this game build...) is logged once, its half-built GameObjects are destroyed and a
+        // "[widget unavailable]" placeholder takes its place, so the mod's builder code (and the rest of the
+        // window) carries on.
+        private TI Guarded<T, TI>(string kind, Func<T> make) where T : UiElement, TI where TI : class
+        {
+            var parent = ContentRt;
+            int cc = parent != null ? parent.childCount : 0;
+            int pc = Host.Pollers.Count, sc = Host.Scrolls.Count, tc = Host.Tipped.Count;
+            T e = null;
+            try
+            {
+                e = make();
+                return Add(e);
+            }
+            catch (Exception ex)
+            {
+                ReportAndRollback(kind, ex, parent, cc, pc, sc, tc, e);
+                return (TI)(object)Add(new UiUnavailable(Host, ContentRt, kind));
+            }
+        }
+
+        private void ReportAndRollback(string kind, Exception ex, RectTransform parent, int cc, int pc, int sc, int tc, UiElement partial)
+        {
+            Owner.ReportBuildFailure(kind, ex);
+            try
+            {
+                if (partial != null) { Children.Remove(partial); partial.MarkDead(); }
+                for (int i = Host.Pollers.Count - 1; i >= pc; i--) Host.Pollers[i].MarkDead();
+                if (Host.Pollers.Count > pc) Host.Pollers.RemoveRange(pc, Host.Pollers.Count - pc);
+                for (int i = Host.Scrolls.Count - 1; i >= sc; i--) Host.Scrolls[i].Dead = true;
+                if (Host.Scrolls.Count > sc) Host.Scrolls.RemoveRange(sc, Host.Scrolls.Count - sc);
+                if (Host.Tipped.Count > tc) Host.Tipped.RemoveRange(tc, Host.Tipped.Count - tc);
+                if (parent != null)
+                    for (int i = parent.childCount - 1; i >= cc; i--)
+                    {
+                        var go = parent.GetChild(i).gameObject;
+                        go.SetActive(false);
+                        UnityEngine.Object.Destroy(go);
+                    }
+            }
+            catch { /* best effort */ }
+        }
+
+        public IUiText AddLabel(string text, UiTextStyle style = UiTextStyle.Body) =>
+            Guarded<UiText, IUiText>("label", () => new UiText(Host, ContentRt, text, style));
 
         public IUiText AddHeader(string text) => AddLabel(text, UiTextStyle.Header);
 
-        public IUiText AddLiveLabel(Func<string> text, float refreshSeconds = 0.25f)
-        {
-            var t = new UiText(Host, ContentRt, string.Empty, UiTextStyle.Body);
-            t.MakeLive(text, refreshSeconds);
-            return Add(t);
-        }
+        public IUiText AddLiveLabel(Func<string> text, float refreshSeconds = 0.25f) =>
+            Guarded<UiText, IUiText>("live label", () =>
+            {
+                var t = new UiText(Host, ContentRt, string.Empty, UiTextStyle.Body);
+                t.MakeLive(text, refreshSeconds);
+                return t;
+            });
 
         public IUiButton AddButton(string text, Action onClick, UiButtonStyle style = null) =>
-            Add(new UiButton(Host, ContentRt, text, onClick, style));
+            Guarded<UiButton, IUiButton>("button", () => new UiButton(Host, ContentRt, text, onClick, style));
 
         public IUiButton AddIconButton(Sprite icon, Action onClick, float size = 48f, UiShape shape = UiShape.Circle)
         {
             var st = new UiButtonStyle { Shape = shape, Width = size, Height = size, Icon = icon, IconOnly = true };
-            return Add(new UiButton(Host, ContentRt, string.Empty, onClick, st));
+            return Guarded<UiButton, IUiButton>("icon button", () => new UiButton(Host, ContentRt, string.Empty, onClick, st));
         }
 
         public IUiToggle AddToggle(string label, bool initial, Action<bool> onChanged, UiToggleStyle style = UiToggleStyle.Switch) =>
-            Add(new UiToggle(Host, ContentRt, label, initial, onChanged, style));
+            Guarded<UiToggle, IUiToggle>("toggle", () => new UiToggle(Host, ContentRt, label, initial, onChanged, style));
 
         public IUiSlider AddSlider(string label, float min, float max, float initial, Action<float> onChanged, float step = 0f, string format = "0.##") =>
-            Add(new UiSlider(Host, ContentRt, label, min, max, initial, onChanged, step, format));
+            Guarded<UiSlider, IUiSlider>("slider", () => new UiSlider(Host, ContentRt, label, min, max, initial, onChanged, step, format));
 
         public IUiInput AddInput(string placeholder, string initial = "", Action<string> onSubmit = null, Action<string> onChanged = null) =>
-            Add(new UiInput(Host, ContentRt, placeholder, initial, onSubmit, onChanged));
+            Guarded<UiInput, IUiInput>("input", () => new UiInput(Host, ContentRt, placeholder, initial, onSubmit, onChanged));
 
         public IUiDropdown AddDropdown(string label, string[] options, int initial, Action<int> onChanged) =>
-            Add(new UiDropdown(Host, ContentRt, label, options, initial, onChanged));
+            Guarded<UiDropdown, IUiDropdown>("dropdown", () => new UiDropdown(Host, ContentRt, label, options, initial, onChanged));
 
         public IUiProgress AddProgressBar(float initial = 0f, string text = null) =>
-            Add(new UiProgress(Host, ContentRt, initial, text));
+            Guarded<UiProgress, IUiProgress>("progress bar", () => new UiProgress(Host, ContentRt, initial, text));
 
         public IUiImage AddImage(Sprite sprite, float width = 0f, float height = 0f) =>
-            Add(new UiImage(Host, ContentRt, sprite, width, height));
+            Guarded<UiImage, IUiImage>("image", () => new UiImage(Host, ContentRt, sprite, width, height));
 
-        public IUiElement AddKeybind(IAslKeybind keybind) => Add(new UiKeybind(Host, ContentRt, keybind));
+        public IUiElement AddKeybind(IAslKeybind keybind) =>
+            Guarded<UiKeybind, IUiElement>("keybind", () => new UiKeybind(Host, ContentRt, keybind));
 
-        public IUiElement AddSpacer(float height = 12f) => Add(new UiSpacer(Host, ContentRt, height));
+        public IUiElement AddSpacer(float height = 12f) =>
+            Guarded<UiSpacer, IUiElement>("spacer", () => new UiSpacer(Host, ContentRt, height));
 
-        public IUiElement AddSeparator() => Add(new UiSeparator(Host, ContentRt));
+        public IUiElement AddSeparator() =>
+            Guarded<UiSeparator, IUiElement>("separator", () => new UiSeparator(Host, ContentRt));
 
-        public IUiContainer AddRow(float spacing = -1f) => Add(CreateRow(Host, ContentRt, spacing));
+        public IUiContainer AddRow(float spacing = -1f) =>
+            Guarded<UiContainer, IUiContainer>("row", () => CreateRow(Host, ContentRt, spacing));
 
-        public IUiContainer AddColumn(float spacing = -1f) => Add(CreateColumn(Host, ContentRt, spacing));
+        public IUiContainer AddColumn(float spacing = -1f) =>
+            Guarded<UiContainer, IUiContainer>("column", () => CreateColumn(Host, ContentRt, spacing));
 
         public IUiContainer AddGrid(int columns, float cellWidth, float cellHeight, float spacing = -1f) =>
-            Add(CreateGrid(Host, ContentRt, columns, cellWidth, cellHeight, spacing));
+            Guarded<UiContainer, IUiContainer>("grid", () => CreateGrid(Host, ContentRt, columns, cellWidth, cellHeight, spacing));
 
-        public IUiContainer AddScroll(float height) => Add(CreateScroll(Host, ContentRt, height));
+        public IUiContainer AddScroll(float height) =>
+            Guarded<UiContainer, IUiContainer>("scroll view", () => CreateScroll(Host, ContentRt, height));
 
-        public IUiContainer AddGroup(string title = null) => Add(CreateGroup(Host, ContentRt, title));
+        public IUiContainer AddGroup(string title = null) =>
+            Guarded<UiContainer, IUiContainer>("group", () => CreateGroup(Host, ContentRt, title));
 
-        public IUiTabs AddTabs() => Add(new UiTabs(Host, ContentRt));
+        public IUiTabs AddTabs() =>
+            Guarded<UiTabs, IUiTabs>("tabs", () => new UiTabs(Host, ContentRt));
     }
 }

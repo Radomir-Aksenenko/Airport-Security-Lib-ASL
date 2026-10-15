@@ -115,8 +115,7 @@ namespace ASL
             _field.selectionColor = UiThemeApplier.WithAlpha(theme.Accent, 0.4f);
             _field.onFocusSelectAll = false;
             _field.restoreOriginalTextOnEscape = true;
-            var font = _text.font;
-            if (font != null) _field.fontAsset = font;
+            UiFonts.RegisterInput(_field);   // font asset + point size follow the text (and the game font when it is found late)
             _field.text = initial;
             _last = initial;
 
@@ -162,6 +161,7 @@ namespace ASL
                         Owner.Fire(_onChanged, t, "input changed");
                         try { Changed?.Invoke(t); } catch (Exception ex) { Owner.Report("input Changed", ex); }
                     }
+                    UiRuntime.EnterConsumed = true;   // this Enter was this field's: it must not also confirm a dialog
                     Owner.Fire(_onSubmit, t, "input submitted");
                     try { Submitted?.Invoke(t); } catch (Exception ex) { Owner.Report("input Submitted", ex); }
                 }

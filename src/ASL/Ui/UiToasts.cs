@@ -71,7 +71,8 @@ namespace ASL
         private static void Ensure()
         {
             if (_go != null) return;
-            _go = UiRuntime.NewCanvas("ASL_Toasts", 32745);
+            // Above the F8 menu (32760) and dropdown popups (32763), below the tooltip (32766): toasts must stay visible everywhere.
+            _go = UiRuntime.NewCanvas("ASL_Toasts", 32764);
             var cg = _go.AddComponent<CanvasGroup>();
             cg.blocksRaycasts = false;
             cg.interactable = false;

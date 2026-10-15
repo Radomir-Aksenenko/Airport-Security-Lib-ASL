@@ -54,7 +54,16 @@ namespace ASL
 
         public Color Color { get => _tmp.color; set => _tmp.color = value; }
 
-        public float FontSize { get => _tmp.fontSize; set { _tmp.fontSize = value; Host.MarkDirty(); } }
+        public float FontSize
+        {
+            get => _tmp.fontSize;
+            set
+            {
+                if (Mathf.Approximately(_tmp.fontSize, value)) return;
+                _tmp.fontSize = value;
+                Host.MarkDirty();   // a different size always changes the label's height
+            }
+        }
 
         public UiTextAlign Align
         {
