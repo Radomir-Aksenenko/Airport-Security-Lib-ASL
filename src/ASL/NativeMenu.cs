@@ -32,6 +32,7 @@ namespace ASL
         private Image _panelImg;
         private bool _built;
         private string _currentMod;
+        private PageControl _currentPage;   // a toolkit sub-page (IModMenu.AddPage) shown under _currentMod
 
         // Animated backdrop that mimics the Settings screen's flowing background.
         private RawImage _animBg;
@@ -46,12 +47,16 @@ namespace ASL
             registry.VisibleChanged += OnVisibleChanged;
         }
 
+        /// <summary>The captured game button template (null until the main menu has been seen). Shared with the UI toolkit.</summary>
+        internal GameObject Template => _template;
+
         public void SetTemplate(GameObject buttonClone)
         {
             if (_template != null || buttonClone == null) return;
             _template = buttonClone;
             UnityEngine.Object.DontDestroyOnLoad(_template);
             _template.SetActive(false);
+            UiRuntime.SetNativeTemplate(_template);   // lets the toolkit clone it (UiShape.Native) and read the game's TMP font
             _log.LogInfo("[menu] captured native button template.");
             try { Build(); }
             catch (Exception ex) { _log.LogError($"[menu] native build failed: {ex}"); }
@@ -64,6 +69,7 @@ namespace ASL
                 if (visible)
                 {
                     _currentMod = null;
+                    _currentPage = null;
                     if (!_built) Build();
                     else
                     {
@@ -74,6 +80,7 @@ namespace ASL
                 }
                 else if (_canvasGo != null)
                 {
+                    UiPages.Clear();
                     _canvasGo.SetActive(false);
                 }
             }
@@ -199,6 +206,7 @@ namespace ASL
         {
             if (_root == null) return;
 
+            UiPages.Clear();
             for (int i = _root.childCount - 1; i >= 0; i--)
                 UnityEngine.Object.Destroy(_root.GetChild(i).gameObject);
 
@@ -218,6 +226,17 @@ namespace ASL
             }
             else
             {
+                if (_currentPage != null)
+                {
+                    // A toolkit-built sub-page: header + back rows, then the page itself fills the rest.
+                    var pc = _currentPage;
+                    AddRow(_currentMod + "  /  " + pc.Label, false, null, idx++);
+                    AddRow("< Back", true, () => { _currentPage = null; Rebuild(); }, idx++);
+                    UiPages.Show(_root, _currentMod, pc.Build, TopPad + idx * (RowH + RowGap), RowW + 180f);
+                    ApplyPanelStyle();
+                    return;
+                }
+
                 AddRow(_currentMod, false, null, idx++);
                 AddRow("< Back", true, () => { _currentMod = null; Rebuild(); }, idx++);
 
@@ -260,10 +279,18 @@ namespace ASL
                                 break;
                             }
                             case PageControl pc:
-                                AddRow(pc.Label + "  >", true, () => _log.LogInfo($"[menu] page '{pc.Label}' not implemented yet."), idx++);
+                                AddRow(pc.Label + "  >", true, () => { _currentPage = pc; Rebuild(); }, idx++);
                                 break;
                             case WindowButtonControl wc:
-                                AddRow(wc.Label, true, () => _log.LogInfo($"[menu] window button '{wc.Label}' not implemented yet."), idx++);
+                                AddRow(wc.Label, true, () =>
+                                {
+                                    // Toggle the toolkit window; opening it hides the menu (the window would sit behind it).
+                                    var win = wc.Window;
+                                    if (win == null) return;
+                                    bool wasOpen = win.IsOpen;
+                                    Safe(win.Toggle);
+                                    if (!wasOpen && win.IsOpen) _registry.Visible = false;
+                                }, idx++);
                                 break;
                             case KeybindControl kc:
                             {

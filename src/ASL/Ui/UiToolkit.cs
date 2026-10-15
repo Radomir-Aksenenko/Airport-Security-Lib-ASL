@@ -7,10 +7,10 @@ namespace ASL
 {
     /// <summary>
     /// Per-mod <see cref="IAslUi"/> (handed out as <c>ctx.Ui</c>). <see cref="Announce"/> delegates to the
-    /// shared <see cref="UiManager"/> banner helper; the toolkit members are owned by the UI agent
-    /// and are placeholders for now.
+    /// shared <see cref="UiManager"/> banner helper. The window / HUD / toast / dialog members live in
+    /// <c>ModUi.Toolkit.cs</c> (same class, partial); <c>LoadLayout</c> / <c>RegisterAction</c> belong to the layouts work.
     /// </summary>
-    internal sealed class ModUi : IAslUi
+    internal sealed partial class ModUi : IAslUi
     {
         private readonly string _modId;
         private readonly string _modName;
@@ -32,8 +32,6 @@ namespace ASL
 
         public UiTheme Theme { get; set; } = UiTheme.Default;
 
-        public bool IsTextInputFocused => false;   // TODO(UI agent): true while an ASL text field has focus
-
         public void RegisterAction(string name, Action action)
         {
             if (string.IsNullOrEmpty(name) || action == null) return;
@@ -46,13 +44,6 @@ namespace ASL
             _actions[name] = action;
         }
 
-        public IUiWindow CreateWindow(string id, string title, UiWindowOptions options = null) => throw NotYet("Ui.CreateWindow");
-        public IUiWindow CreateHud(string id, UiAnchor anchor, UiWindowOptions options = null) => throw NotYet("Ui.CreateHud");
-        public IUiWindow GetWindow(string id) => null;
-        public void Toast(string text, UiToastKind kind = UiToastKind.Info, float seconds = 3f) => _log.LogInfo($"[toast:{kind}] {text}");
-        public void Confirm(string title, string message, Action onYes, Action onNo = null, string yesText = "Yes", string noText = "No") => throw NotYet("Ui.Confirm");
-        public void Prompt(string title, string message, string initial, Action<string> onSubmit, Action onCancel = null) => throw NotYet("Ui.Prompt");
-        public void Alert(string title, string message, Action onClose = null) => throw NotYet("Ui.Alert");
         public IUiWindow LoadLayout(string relativeJsonPath) => throw NotYet("Ui.LoadLayout");
 
         private static NotImplementedException NotYet(string what) => new NotImplementedException($"ASL 2.0: {what} not implemented yet");

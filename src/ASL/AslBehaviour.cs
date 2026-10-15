@@ -32,12 +32,15 @@ namespace ASL
 
         private void Update()
         {
-            // Menu toggle — checked every frame for responsiveness.
+            // UI toolkit driver first, so text-focus state is fresh for the F8 check and the keybinds below.
+            UiRuntime.Tick();
+
+            // Menu toggle — checked every frame for responsiveness. Suppressed while typing in an ASL text field.
             var menu = AslPlugin.Menu;
             if (menu != null)
             {
                 bool down = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
-                if (down && !_wasToggleDown) menu.Visible = !menu.Visible;
+                if (down && !_wasToggleDown && !UiRuntime.IsTextInputFocused) menu.Visible = !menu.Visible;
                 _wasToggleDown = down;
 
                 if (menu.Visible) AslPlugin.MenuUi?.TickBackground();   // scroll the animated backdrop
@@ -96,66 +99,21 @@ namespace ASL
             MainMenuInjector.PollLanguage();
         }
 
-        private bool _menuWasVisible;
-        private bool _registeredCursorUser;
-        private bool _inputBlocked;
-
-        // Freeing the cursor for the F8 menu the WRONG way (writing Cursor.lockState ourselves) loses a
-        // per-frame race: the game's cursor is owned by the singleton Metater.MetaCursor, whose own
-        // LateUpdate re-asserts the state from its CursorUsers set. So we do it the game's OWN way —
-        // register this behaviour as a "cursor user" while the menu is open (exactly like the game's
-        // RequireCursor component) and let MetaCursor free the cursor. We also block player look/move so
-        // the camera doesn't spin while you use the menu.
+        // Freeing the cursor / blocking player input is done by CursorManager (reason based: the F8 menu,
+        // open toolkit windows, a focused text field) with the exact mechanism the F8 menu always used:
+        // register this behaviour as a MetaCursor "cursor user" (the game's own RequireCursor way — writing
+        // Cursor.lockState ourselves loses a per-frame race with MetaCursor.LateUpdate) and block the local
+        // controller's input so the camera doesn't spin while you use the UI.
         private void LateUpdate()
         {
             AslPlugin.Bus?.RaiseLateUpdate();   // per-frame, allocation-free
 
             var menu = AslPlugin.Menu;
-            bool visible = menu != null && menu.Visible;
-
-            if (visible)
-            {
-                if (!_registeredCursorUser)
-                {
-                    try
-                    {
-                        var mc = MetaCursor.Instance;                 // null on the main menu (cursor already free there)
-                        var users = mc != null ? mc.CursorUsers : null;
-                        if (users != null) { users.Add(this); _registeredCursorUser = true; }
-                    }
-                    catch { }
-                }
-                if (SetLocalInputBlocked(true)) _inputBlocked = true;
-            }
-            else
-            {
-                UnregisterCursorUser();
-                if (_inputBlocked && SetLocalInputBlocked(false)) _inputBlocked = false;   // retry until a player exists
-            }
-            _menuWasVisible = visible;
-        }
-
-        private void UnregisterCursorUser()
-        {
-            if (!_registeredCursorUser) return;
-            try { MetaCursor.Instance?.CursorUsers?.Remove(this); } catch { }
-            _registeredCursorUser = false;
+            CursorManager.Apply(this, menu != null && menu.Visible);
         }
 
         // Safety: never leave ourselves registered (a stale entry could wedge the cursor free forever).
-        private void OnDisable() => UnregisterCursorUser();
-        private void OnDestroy() => UnregisterCursorUser();
-
-        // Returns true if the local controller was found and the flag was set — callers retry until then.
-        private static bool SetLocalInputBlocked(bool blocked)
-        {
-            try
-            {
-                var lp = MetaPlayer.LocalPlayerInstance;
-                if (lp == null) return false;
-                return PlayerControl.SetInputBlocked(lp, blocked);
-            }
-            catch { return false; }
-        }
+        private void OnDisable() => CursorManager.Release(this);
+        private void OnDestroy() => CursorManager.Release(this);
     }
 }
