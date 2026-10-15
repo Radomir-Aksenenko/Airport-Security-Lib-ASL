@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
+using Il2CppInterop.Runtime;
 
 namespace ASL
 {
@@ -69,6 +70,49 @@ namespace ASL
             if (_holder != null) return;
             _holder = new GameObject(HolderName);
             UnityEngine.Object.DontDestroyOnLoad(_holder);
+            // Before Ready (plugin Load: no scene, TMP settings or fonts yet) everything is built under a deactivated
+            // holder: nothing renders, nothing ticks; SetReady() switches it on.
+            if (!Ready) _holder.SetActive(false);
+        }
+
+        // ---- readiness gate ----------------------------------------------------------------------
+
+        private const int ReadyFrames = 60;
+        private static int _readyFrames;
+        private static readonly List<UiWindow> DeferredOpens = new List<UiWindow>();
+        private static readonly List<Action> DeferredWork = new List<Action>();
+
+        /// <summary>
+        /// False while the plugin is still loading (mods' <c>OnLoad</c> run before any scene, TMP settings or fonts
+        /// exist). Windows / HUDs may be created and filled before then, but are built hidden and opened only once
+        /// Ready; no EventSystem is created before. Becomes true on the first scene change or after 60 frames.
+        /// </summary>
+        public static bool Ready { get; private set; }
+
+        /// <summary>Queues an <c>Open()</c> requested before Ready.</summary>
+        public static void DeferOpen(UiWindow w) { if (!DeferredOpens.Contains(w)) DeferredOpens.Add(w); }
+
+        /// <summary>Runs <paramref name="work"/> now when Ready, else once Ready (e.g. manifest <c>ui</c> loading).</summary>
+        public static void RunWhenReady(Action work)
+        {
+            if (work == null) return;
+            if (Ready) { work(); return; }
+            DeferredWork.Add(work);
+        }
+
+        /// <summary>Flips the gate (idempotent): activates the holder, runs deferred work, then performs deferred opens.</summary>
+        public static void SetReady()
+        {
+            if (Ready) return;
+            Ready = true;
+            try { if (_holder != null) _holder.SetActive(true); }
+            catch (Exception ex) { AslPlugin.Logger?.LogWarning($"[ui] activating the UI holder failed: {ex.Message}"); }
+            var work = DeferredWork.ToArray(); DeferredWork.Clear();
+            for (int i = 0; i < work.Length; i++)
+                try { work[i](); } catch (Exception ex) { AslPlugin.Logger?.LogError($"[ui] deferred UI work failed: {ex.Message}"); }
+            var opens = DeferredOpens.ToArray(); DeferredOpens.Clear();
+            for (int i = 0; i < opens.Length; i++)
+                try { opens[i].OpenDeferred(); } catch (Exception ex) { opens[i].Host.Owner.Report("deferred window open", ex); }
         }
 
         /// <summary>A new full-screen overlay canvas (1920x1080 scaler, raycaster) under the shared holder; created active.</summary>
@@ -111,8 +155,12 @@ namespace ASL
         /// input module cannot be created the half-made EventSystem is removed again and the attempt retried later
         /// (a module-less EventSystem would make <c>EventSystem.current</c> non-null and block every later fix).
         /// </summary>
-        public static void EnsureEventSystem()
+        public static void EnsureEventSystem(bool menu = false)
         {
+            // Never before Ready (a boot-time EventSystem would shadow the game's own), and only for hosts that need
+            // raycasts: HUDs and toasts are click-through. The F8 menu passes menu=true.
+            if (!Ready) return;
+            if (!menu && !NeedsEventSystem()) return;
             GameObject es = null;
             try
             {
@@ -123,14 +171,46 @@ namespace ASL
                 UnityEngine.Object.DontDestroyOnLoad(es);
                 es.AddComponent<EventSystem>();
                 es.AddComponent<StandaloneInputModule>();
+                _ourEs = es;
+                _nextEsWatch = now + 2f;
                 AslPlugin.Logger?.LogInfo("[ui] created an EventSystem (none was present).");
             }
             catch (Exception ex)
             {
                 try { if (es != null) UnityEngine.Object.Destroy(es); } catch { }
+                _ourEs = null;
                 _esRetryAt = Time.realtimeSinceStartup + 30f;
                 AslPlugin.Logger?.LogWarning($"[ui] EventSystem check failed: {ex.Message} (retrying in 30 s)");
             }
+        }
+
+        private static bool NeedsEventSystem() => Stack.Count > 0 || PageHost != null || UiPopup.Current != null;
+
+        private static GameObject _ourEs;
+        private static float _nextEsWatch;
+
+        // If the game later brings its own EventSystem, ours must go (two would fight over input; the game's wins).
+        private static void WatchEventSystem()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextEsWatch) return;
+            _nextEsWatch = now + 2f;
+            try
+            {
+                if (_ourEs == null) return;
+                var all = Resources.FindObjectsOfTypeAll(Il2CppType.Of<EventSystem>());
+                if (all == null) return;
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var e = all[i] != null ? all[i].TryCast<EventSystem>() : null;
+                    if (e == null || e.gameObject == _ourEs) continue;
+                    UnityEngine.Object.Destroy(_ourEs);
+                    _ourEs = null;
+                    AslPlugin.Logger?.LogInfo("[ui] the game created its own EventSystem; removed ours.");
+                    return;
+                }
+            }
+            catch (Exception ex) { _nextEsWatch = now + 30f; AslPlugin.Logger?.LogWarning($"[ui] EventSystem watch failed: {ex.Message}"); }
         }
 
         public static bool IsOurs(Transform t)
@@ -258,6 +338,12 @@ namespace ASL
         /// <summary>Called once per frame from <see cref="AslBehaviour"/>.</summary>
         public static void Tick()
         {
+            if (!Ready)
+            {
+                if (++_readyFrames < ReadyFrames) return;
+                SetReady();
+            }
+            if (_ourEs != null) WatchEventSystem();
             if (!IsActive())
             {
                 if (_focusNow || _focusPrev) { _focusNow = false; _focusPrev = false; CursorManager.SetTextInput(false); }
@@ -275,8 +361,11 @@ namespace ASL
             }
         }
 
+        private static bool _inputLive;
+
         private static void ReadInput()
         {
+            _inputLive = true;
             Dt = Time.unscaledDeltaTime;
             EnterConsumed = false;
             try
@@ -308,6 +397,7 @@ namespace ASL
         private static void TickCore()
         {
             UiFonts.Tick(Time.realtimeSinceStartup);
+            if (Stack.Count == 0 && PageHost == null && UiPopup.Current == null) { TickPassive(); return; }
             ReadInput();
             bool menuVisible = AslPlugin.Menu != null && AslPlugin.Menu.Visible;
             if (menuVisible != _menuWas) { _menuWas = menuVisible; _hoverDirty = true; }
@@ -323,12 +413,7 @@ namespace ASL
 
             // Widgets.
             // One window's failure must not stop the others from ticking.
-            for (int i = Huds.Count - 1; i >= 0; i--)
-            {
-                if (i >= Huds.Count) continue;
-                var h = Huds[i];
-                try { h.TickHud(); } catch (Exception ex) { h.Host.Owner.Report("hud tick", ex); }
-            }
+            TickHuds();
             if (!menuVisible)
             {
                 for (int i = Stack.Count - 1; i >= 0; i--)
@@ -388,6 +473,36 @@ namespace ASL
 
             CursorManager.SetTextInput(_focusNow);
             _focusPrev = _focusNow;
+        }
+
+        private static void TickHuds()
+        {
+            for (int i = Huds.Count - 1; i >= 0; i--)
+            {
+                if (i >= Huds.Count) continue;
+                var h = Huds[i];
+                try { h.TickHud(); } catch (Exception ex) { h.Host.Owner.Report("hud tick", ex); }
+            }
+        }
+
+        // Only click-through HUDs / toasts are up (no window, F8 page or popup): no pointer or keyboard work, just
+        // the live widgets and toast timing. Input flags are cleared once so nothing reads a stale click later.
+        private static void TickPassive()
+        {
+            Dt = Time.unscaledDeltaTime;
+            EnterConsumed = false;
+            if (_inputLive)
+            {
+                _inputLive = false;
+                MouseDown = MouseHeld = MouseUp = PointerChanged = EnterPressed = EscapePressed = false;
+                Wheel = 0f;
+            }
+            if (_hover != null) SetHover(null);
+            HoverWindow = null;
+            if (_focusNow || _focusPrev) { _focusNow = false; _focusPrev = false; CursorManager.SetTextInput(false); }
+            TickHuds();
+            UiTooltips.Reset();
+            UiToasts.Tick(Dt);
         }
 
         private static void UpdateHover(bool menuVisible)

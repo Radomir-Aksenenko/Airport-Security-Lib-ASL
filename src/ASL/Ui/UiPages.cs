@@ -34,10 +34,10 @@ namespace ASL
 
                 var area = UiScrollArea.Create(rt, host, true, 6, 16, 6, 6, host.Theme.Spacing, out _);
                 var page = new PageContainer(host, area);
-                UiRuntime.EnsureEventSystem();
                 owner.Fire(() => build(page), "menu page build");
                 host.MarkDirty();
                 UiRuntime.PageHost = host;
+                UiRuntime.EnsureEventSystem(true);
             }
             catch (Exception ex) { owner.Report("menu page", ex); }
         }

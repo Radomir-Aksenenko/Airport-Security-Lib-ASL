@@ -28,7 +28,7 @@ namespace ASL
         private RectTransform _rootRt, _titleBar, _body;
         private TextMeshProUGUI _titleText;
         private UiButton _close;
-        private bool _open;
+        private bool _open, _pendingOpen;   // _pendingOpen: Open() was requested before the UI runtime was Ready
         private bool _dragging;
         private Vector2 _dragOff;
         private int _clampFrames, _relayoutFrames;
@@ -70,17 +70,24 @@ namespace ASL
             set { _title = value ?? string.Empty; if (_titleText != null) _titleText.text = _title; }
         }
 
-        public bool IsOpen => _open;
+        public bool IsOpen => _open || _pendingOpen;
 
         public override bool Visible
         {
-            get => _open;
+            get => _open || _pendingOpen;
             set { if (value) Open(); else Close(); }
         }
 
         public void Open()
         {
-            if (_open || Dead) return;
+            if (_open || _pendingOpen || Dead) return;
+            if (!UiRuntime.Ready)
+            {
+                // Plugin-load time (before any scene / TMP settings / fonts): remember the request, open once Ready.
+                _pendingOpen = true;
+                UiRuntime.DeferOpen(this);
+                return;
+            }
             _open = true;
             try { _canvasGo.SetActive(true); } catch (Exception ex) { Owner.Report("window open", ex); }
             OpenedFrame = Time.frameCount;
@@ -88,15 +95,24 @@ namespace ASL
             _clampFrames = 3;
             Host.Dirty = true;
             Host.Repoll = 3;
-            UiRuntime.EnsureEventSystem();
             UiRuntime.WindowOpening(this);   // a window opened while the F8 menu is up would sit under it: hide the menu
             UiRuntime.WindowOpened(this);
+            if (!IsHud) UiRuntime.EnsureEventSystem();   // HUDs are click-through: they never need (or create) an EventSystem
             Relayout();
             try { Opened?.Invoke(); } catch (Exception ex) { Owner.Report("window Opened", ex); }
         }
 
+        /// <summary>Called by <see cref="UiRuntime"/> when it becomes Ready: performs a deferred Open().</summary>
+        internal void OpenDeferred()
+        {
+            if (!_pendingOpen) return;
+            _pendingOpen = false;
+            if (!Dead) Open();
+        }
+
         public void Close()
         {
+            if (_pendingOpen) { _pendingOpen = false; return; }   // cancel a deferred open
             if (!_open) return;
             _open = false;
             _dragging = false;

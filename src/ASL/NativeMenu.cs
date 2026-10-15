@@ -431,19 +431,8 @@ namespace ASL
             if (s.Value > s.Max + 0.0001f) s.Value = s.Min;
         }
 
-        private void EnsureEventSystem()
-        {
-            try
-            {
-                if (UnityEngine.EventSystems.EventSystem.current != null) return;
-                var es = new GameObject("ASL_EventSystem");
-                UnityEngine.Object.DontDestroyOnLoad(es);
-                es.AddComponent<UnityEngine.EventSystems.EventSystem>();
-                es.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
-                _log.LogInfo("[menu] created an EventSystem (none was present).");
-            }
-            catch (Exception ex) { _log.LogWarning($"[menu] EventSystem check failed: {ex.Message}"); }
-        }
+        // One EventSystem owner for the whole mod (UiRuntime): only created once Ready, removed again if the game brings its own.
+        private void EnsureEventSystem() => UiRuntime.EnsureEventSystem(true);
 
         private void Safe(Action a)
         {

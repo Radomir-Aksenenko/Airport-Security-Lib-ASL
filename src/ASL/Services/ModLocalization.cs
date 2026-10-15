@@ -31,6 +31,8 @@ namespace ASL
         private Dictionary<string, string> _current;     // table for the resolved language (lazy; null = not loaded)
         private Dictionary<string, string> _english;     // table for en (null = not loaded / same as current)
         private bool _englishIsCurrent;
+        private string _resolvedLang;                    // language token the tables were resolved against
+        private long _nextLangCheck;                     // Environment.TickCount64 gate for the (cheap, throttled) language compare
         private readonly HashSet<string> _warned = new HashSet<string>();
 
         public ModLocalization(string modId, string modDirectory, ManualLogSource log, IAslEvents bus = null)
@@ -121,8 +123,18 @@ namespace ASL
 
         private void EnsureTables()
         {
-            if (_current != null) return;
+            if (_current != null)
+            {
+                // Safety net if a LanguageChanged was missed (e.g. the language was still unknown at startup): at most
+                // twice a second compare the live language token with the one we resolved against.
+                long now = Environment.TickCount64;
+                if (now < _nextLangCheck) return;
+                _nextLangCheck = now + 500;
+                if (string.Equals(_resolvedLang, Language, StringComparison.Ordinal)) return;
+                _current = null; _english = null;
+            }
             Subscribe();   // from now on we must hear about language switches
+            _resolvedLang = Language;
 
             if (_files == null) Discover();
 
@@ -131,7 +143,7 @@ namespace ASL
             _englishIsCurrent = true;
             if (_names.Count == 0) return;
 
-            var chosen = LanguageResolver.Pick(_names, Language);
+            var chosen = LanguageResolver.Pick(_names, _resolvedLang);
             _current = LoadTable(chosen);
 
             // The resolver falls back to "first available" when there is no English, so check the pick really is English.

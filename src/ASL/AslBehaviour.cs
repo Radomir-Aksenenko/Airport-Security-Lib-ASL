@@ -62,6 +62,7 @@ namespace ASL
                 if (scene != _lastScene)
                 {
                     _lastScene = scene;
+                    UiRuntime.SetReady();   // first scene = the UI runtime may build / open (idempotent)
                     bus.RaiseSceneChanged(scene);
                 }
             }
