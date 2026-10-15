@@ -87,7 +87,14 @@ Good to know:
 
 - Windows are namespaced per mod; two mods can both create `"main"`.
 - Creating a window with an id you already used **destroys the old one** and returns a fresh window.
-- `ctx.Ui.GetWindow(id)` returns your window or HUD by id (or `null`).
+- `ctx.Ui.GetWindow(id)` returns your window or HUD by id (or `null`). Windows declared in the manifest `ui` are built after the UI
+  is Ready, so they are not available in `OnLoad` / `OnAllModsLoaded`; look them up later (for example on `SceneChanged`).
+- **UI readiness.** Windows and HUDs you create (and `Open()`) during `OnLoad` / `OnAllModsLoaded` are built immediately but appear once the
+  UI is Ready (first scene change, or ~60 frames); `IsOpen` is true while they are pending.
+- **EventSystem.** ASL creates one only on demand (an interactive window or dialog is open and none exists) and removes its own if the game
+  brings one. HUDs never create one.
+- `CreateHud` honours only `Width`, `Height`, `OffsetX`, `OffsetY`, `Theme`, `Padding` and `SortOrder`; HUDs are always click-through
+  and never capture the cursor.
 - Everything your mod creates is destroyed when the mod unloads or hot-reloads. Dialogs are destroyed without
   calling their callbacks.
 - Call the UI from the main thread (all ASL callbacks already run there).

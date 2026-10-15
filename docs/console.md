@@ -23,9 +23,9 @@ commands without building a UI for them.
 
 The console is built from the public [UI toolkit](ui.md), so it looks and behaves like any ASL window.
 
-> **Rebinding the key.** The console key is an ASL keybind (`asl/console`, default `BackQuote`), but this build adds no
-> row for it to the F8 menu. To change it, edit `BepInEx/config/ASL.Keybinds.cfg` and add or change the line
-> `asl/console = F10` (any Unity `KeyCode` name), then restart the game.
+> **Rebinding the key.** The console key is an ASL keybind (`asl/console`, default `BackQuote`) and is rebindable on the
+> F8 **ASL** page: click the row and press a key. The choice is saved to `BepInEx/config/ASL.Keybinds.cfg` (you can also edit
+> the line `asl/console = F10` by hand).
 
 ## Built-in commands
 
@@ -95,7 +95,7 @@ commonly used as a namespace (`mymod.reset`).
 ### Log mirror and output
 
 `Print` and returned text also go to the BepInEx log, so they are in `LogOutput.log` too. With log mirroring on, BepInEx
-log lines (from any plugin) appear in the console as well; the console only buffers them, so it costs nothing while closed.
+log lines (from any plugin) appear in the console as well; the console only buffers them (keeping just the last 200 lines while it is closed), so it costs nothing while closed.
 
 ### Tips
 

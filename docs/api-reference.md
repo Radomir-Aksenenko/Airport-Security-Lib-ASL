@@ -212,7 +212,7 @@ public interface IAslUi
 
     // --- new in 2.0 ---
     IUiWindow CreateWindow(string id, string title, UiWindowOptions options = null);   // hidden until Open()
-    IUiWindow CreateHud(string id, UiAnchor anchor, UiWindowOptions options = null);   // visible overlay, click-through
+    IUiWindow CreateHud(string id, UiAnchor anchor, UiWindowOptions options = null);   // visible overlay, click-through (honours Width/Height/OffsetX/OffsetY/Theme/Padding/SortOrder)
     IUiWindow GetWindow(string id);                                                    // this mod's window by id, or null
     void Toast(string text, UiToastKind kind = UiToastKind.Info, float seconds = 3f);
     void Confirm(string title, string message, Action onYes, Action onNo = null, string yesText = "Yes", string noText = "No");
@@ -291,6 +291,7 @@ How conflicts are handled:
 - **Mod vs game** — binding onto a key the game uses (movement, jump, …) is **allowed but flagged**
   (`HasConflict`, a warning in the log), since it may double-trigger. The reserved-game-key set is a
   conservative best-effort list (WASD, arrows, Space, Shift, Ctrl, mouse, Tab, Esc).
+- Saved rebinds survive while the owning mod is disabled or not loaded (they are kept in the file and applied when it loads again).
 - The player rebinds in the **F8 menu**: open your mod, click the keybind row, press a key (Esc
   cancels). Bindings persist to `BepInEx/config/ASL.Keybinds.cfg` (editable by hand too).
 
@@ -420,7 +421,7 @@ public interface IAslLocalization
     string Language { get; }                       // the game's language token, null if unknown
     string Get(string key, params object[] args);  // lang/<lang>.json -> lang/en.json -> the key; string.Format with args
     bool   Has(string key);
-    event  Action LanguageChanged;
+    event  Action LanguageChanged;                 // may fire once shortly after load if the detected language differs from the startup one
 }
 ```
 
@@ -440,6 +441,8 @@ public interface IAslNet
     bool IsConnectedClient { get; }   // our client is connected
     int  ConnectionCount { get; }     // server-side connected clients
     event Action<int> ConnectionsChanged;   // server-side, fires with the new count
+    // ctx.Net is a per-mod wrapper: GetSync(id) returns a per-mod wrapper (same instance per id within a mod),
+    // and Net subscriptions / event handlers are removed on unload and hot reload.
 
     // --- message transport ---
     bool MessagingAvailable { get; }  // transport could be installed (lazy; reading it sets up)

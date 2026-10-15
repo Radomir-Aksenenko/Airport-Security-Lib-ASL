@@ -11,7 +11,8 @@ namespace ASL.Api
     /// save.Coins += 10;
     /// ctx.Storage.Save("save", save);
     /// </code>
-    /// Names are sanitised: path separators and ".." are stripped, so a name can never escape the folder.
+    /// Names are sanitised: path separators and ".." are replaced with '_', and when a name had to change a short
+    /// hash suffix (<c>~xxxx</c>) is appended so different names stay distinct; a name can never escape the folder.
     /// </summary>
     public interface IAslStorage
     {

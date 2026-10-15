@@ -5,5 +5,6 @@
   "author": "yourname",
   "description": "A no-build script mod: a window with a button and a toast.",
   "type": "script",
+  "minAslVersion": "2.0.0",
   "entry": "Main.cs"
 }

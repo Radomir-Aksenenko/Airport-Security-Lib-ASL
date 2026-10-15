@@ -116,7 +116,7 @@ The F8 root lists these two rows above your mods and paginates (`< Prev`, `Next 
 Reload a script mod without restarting the game:
 
 - **Mod Manager > Reload**, or console `reload <id>`.
-- Or automatically: add `"hotReload": true` to the manifest. ASL checks the mod's `.cs` files (names, sizes, modified times) once a second and reloads
+- Or automatically: add `"hotReload": true` to the manifest. ASL checks the mod's `.cs` files, `ui/*.json`, `lang/*.json` and manifest-listed `ui` files (names, sizes, modified times) once a second and reloads
   after a change has settled for a full poll (editors often save in several steps). A compile error is logged, the mod stays `Failed`, and you can fix it
   and save again. It is only retried after the next edit.
 

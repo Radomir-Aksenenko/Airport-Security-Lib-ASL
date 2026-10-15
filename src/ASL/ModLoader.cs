@@ -450,16 +450,17 @@ namespace ASL
 
         private void LoadContentMod(ModManifest manifest, string dir)
         {
-            if (manifest.Content == null)
+            bool hasUi = manifest.Ui != null && manifest.Ui.Length > 0;
+            if (manifest.Content == null && !hasUi)
             {
                 Fail(manifest, "type=content but no 'content' section in manifest.", LogLevel.Warning);
                 return;
             }
 
-            if (manifest.Content.ListTextureNames) _content.RequestTextureNameDump();
+            if (manifest.Content != null && manifest.Content.ListTextureNames) _content.RequestTextureNameDump();
 
             int queued = 0;
-            if (manifest.Content.Textures != null)
+            if (manifest.Content?.Textures != null)
             {
                 foreach (var tr in manifest.Content.Textures)
                 {

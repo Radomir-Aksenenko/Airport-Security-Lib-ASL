@@ -78,7 +78,7 @@ All optional, all in the same `content` object (full details: [assets-and-locali
 - `strings` rewrites on-screen text that equals a key exactly. **Experimental**: the game may re-set a label and undo it.
 - `ui` lists [JSON layout](ui.md#json-layouts-reference) files; each becomes a window with built-in actions (`toast:`, `announce:`,
   `command:`, `open:`, `toggle:`, `close`). Example: [`samples/ExampleUiContentMod`](../samples/ExampleUiContentMod). A content mod
-  must still contain a `content` object (`{}` is fine).
+  may ship only `ui` (no `content` object needed).
 
 ---
 

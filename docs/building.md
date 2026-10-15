@@ -88,7 +88,7 @@ If the game is running, `BepInEx\plugins\ASL.dll` is locked and the deploy copy 
 
 `tools/compile-check/build.sh` type-checks everything on a machine **without the game** (Linux/CI): the real BepInEx 6 IL2CPP DLLs plus *stub*
 Unity/game interop assemblies. It builds `ASL.slnx`, the samples that are not in the solution (HelloMod, FunPanel), the script mods
-(through the same path the loader uses) and the stub-surface self-test, then runs the unit tests and the API-compat check:
+(through the same path the loader uses) and the stub-surface self-test, also compiles the `templates/` projects and validates the template JSON, then runs the unit tests and the API-compat check:
 
 ```bash
 tools/compile-check/build.sh            # needs .NET SDK 9+, curl, unzip; the first run downloads ~33 MB

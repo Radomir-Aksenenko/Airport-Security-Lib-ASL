@@ -28,7 +28,9 @@ namespace ASL.Api
 
         /// <summary>
         /// Create a window. It is hidden until <see cref="IUiWindow.Open"/> is called. Creating a window
-        /// with an id this mod already used returns a new window replacing the old one.
+        /// with an id this mod already used returns a new window replacing the old one. If the UI is not Ready
+        /// yet (e.g. during OnLoad/OnAllModsLoaded) the window is built immediately but shown only after the
+        /// first scene change (or ~60 frames); <see cref="IUiWindow.IsOpen"/> is true while it is pending.
         /// </summary>
         /// <param name="id">Window id, unique within your mod.</param>
         /// <param name="title">Title bar text.</param>
@@ -38,6 +40,9 @@ namespace ASL.Api
         /// <summary>
         /// Create a HUD: a visible on-screen overlay with no title bar that does not capture the cursor and
         /// is click-through by default. Use it for counters, status lines and minimaps.
+        /// HUDs are always click-through and never capture the cursor. Only these options are honoured:
+        /// Width, Height, OffsetX, OffsetY, Theme, Padding, SortOrder. Like windows, a HUD created before the
+        /// UI is Ready is shown after the first scene change; <see cref="IUiWindow.IsOpen"/> is true meanwhile.
         /// </summary>
         /// <param name="id">HUD id, unique within your mod.</param>
         /// <param name="anchor">Screen anchor.</param>

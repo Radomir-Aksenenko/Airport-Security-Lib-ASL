@@ -27,8 +27,8 @@ Every mod folder under `mods/` contains exactly one `manifest.json`. It is parse
 | `tags` | string[] | no | **(2.0)** Free-form labels shown in the Mod Manager. |
 | `website` | string | no | **(2.0)** Project or home page URL. |
 | `icon` | string | no | **(2.0)** Icon PNG path relative to the mod folder, for the Mod Manager. |
-| `ui` | string[] | no | **(2.0)** Declarative UI layouts to load after the mod loads, for example `["ui/main.json"]`. Works for **every** mod kind, content mods included. See [JSON layouts](ui.md#json-layouts-reference). |
-| `hotReload` | bool | no | **(2.0)** Script mods only: watch the `.cs` sources and reload the mod when they change ([details](mod-manager.md#hot-reload-script-mods)). |
+| `ui` | string[] | no | **(2.0)** Declarative UI layouts to load after the mod loads, for example `["ui/main.json"]`. Works for **every** mod kind, content mods included (a content mod may ship only `ui`). Windows are built after the UI is Ready, so `GetWindow(id)` for them is not available in `OnLoad`/`OnAllModsLoaded`. See [JSON layouts](ui.md#json-layouts-reference). |
+| `hotReload` | bool | no | **(2.0)** Script mods only: watch the `.cs` sources (plus `ui/*.json`, `lang/*.json` and manifest-listed `ui` files) and reload the mod when they change ([details](mod-manager.md#hot-reload-script-mods)). |
 
 Dependency entries follow the [version-range syntax](mod-manager.md#version-ranges) (`>=`, `>`, `<`, `<=`, `=`, `^`, `~`, bare version = `>=`,
 several joined by spaces). Load order, states and what happens to a mod with a missing dependency are in
@@ -100,8 +100,8 @@ A list of layout files; each becomes a window of this mod. The file format (wind
 ```
 
 Windows start closed; `"open": true` or a `toggleKey` makes them reachable. A bad layout logs warnings or an error and never
-stops the mod from loading. A `"type": "content"` mod that only ships UI still needs a `content` object (`"content": {}` is
-enough); without it ASL logs `type=content but no 'content' section` and skips the mod.
+stops the mod from loading. A `"type": "content"` mod may ship only `ui` (no `content` object). A content mod with neither `content`
+nor `ui` logs `type=content but no 'content' section` and is skipped.
 
 ## Examples
 

@@ -57,7 +57,7 @@ ApiCompat check against `main`), the 0.1 samples are kept as regression tests, a
 - **Assets** (`ctx.Assets`) and **localization** (`ctx.Loc`, [docs](docs/assets-and-localization.md)): safe-path file access, cached PNG
   textures/sprites (9-slice), managed WAV decode to `AudioClip`, AssetBundles; `lang/*.json` with game-language matching and English fallback.
 - **Content mods v2**: `content.audio` (WAV clip swaps), `content.strings` (experimental exact-text overrides), `content.listAudioNames`.
-- **Templates** (`templates/`): `dotnet new asl-dll | asl-script | asl-content | asl-ui`.
+- **Templates** (`templates/`): `dotnet new asl-dll | asl-script | asl-content | asl-ui`; `tools/compile-check` also compiles them and validates the template JSON.
 - **Samples**: `UiShowcase` (DLL, in the solution and deployed by the default build) and `ExampleUiContentMod` (no-code UI).
 - **Tooling**: `tools/compile-check` (real BepInEx core + stub interop; compiles ASL, samples and script mods without the game,
   runs the unit tests, and checks `ASL.API` for breaking changes against `main`), `tests/ASL.Tests` and `tests/ASL.Data.Tests`, and a CI workflow.
@@ -88,6 +88,17 @@ ApiCompat check against `main`), the 0.1 samples are kept as regression tests, a
   prefabs/assets and cap work per pass. `MenuVisibilityChanged` is raised after the native menu has reacted.
 - `docs/building.md`: the solution now contains `UiShowcase`; `tests/` and `templates/` are intentionally outside it.
 
+- **UI readiness**: windows/HUDs opened during `OnLoad`/`OnAllModsLoaded` are built at once and shown once the UI is Ready (first scene change or
+  ~60 frames); `IsOpen` is true meanwhile. Manifest `ui` windows are built after Ready (look them up later, e.g. on `SceneChanged`).
+- **EventSystem** is created only on demand (interactive host open, none exists) and ASL removes its own when the game brings one; HUDs never create one.
+- `ctx.Net` is a per-mod wrapper: `GetSync(id)` returns a per-mod wrapper (same instance per id); Net subscriptions and event handlers are removed on unload / hot reload.
+- `LanguageChanged` can fire once shortly after load if the detected language differs from the startup one.
+- The console key is rebindable on the F8 **ASL** page; saved key rebinds survive while a mod is disabled / not loaded.
+- `log.mirror` keeps only the last 200 lines while the console is closed.
+- `hotReload` also watches `ui/*.json`, `lang/*.json` and manifest-listed `ui` files.
+- Content mods may ship only `ui` (no `content` object).
+- Template manifests (dll, script, ui) and `ExampleUiContentMod` declare `minAslVersion: 2.0.0`.
+
 ### Fixed
 
 - A throwing `Update` handler in one mod no longer stops the handlers of the mods after it (0.1 ran them as one multicast delegate).
@@ -97,7 +108,6 @@ ApiCompat check against `main`), the 0.1 samples are kept as regression tests, a
 ### Known limitations
 
 - None of the 2.0 features has been run in the game yet (see the status note above).
-- The dev console's open key (`asl/console`, default BackQuote) has no row in the F8 menu; rebind it in `BepInEx/config/ASL.Keybinds.cfg`.
 - Game-specific events (NPC spawned, round start/end, contraband scans) and an RPC helper for the networking layer are not part of 2.0.
 
 ## [0.1.0] — 2026-06-17

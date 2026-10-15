@@ -30,7 +30,7 @@ All handlers run on the main thread.
 | `LocalPlayerChanged` | Your player spawned/despawned. | Polled and debounced against flicker. |
 | `MenuVisibilityChanged` | F8 menu opened/closed. | Raised after the native menu reacted. |
 | `AllModsLoaded` | Once, after every mod's `OnLoad` has run. | Same moment as `AslMod.OnAllModsLoaded()`. Also raised after a [hot reload](mod-manager.md#hot-reload-script-mods) of your mod. |
-| `LanguageChanged` | The game language changed (argument: the new token). | Pair with [`ctx.Loc`](assets-and-localization.md). |
+| `LanguageChanged` | The game language changed (argument: the new token). May fire once shortly after load if the detected language differs from the startup one. | Pair with [`ctx.Loc`](assets-and-localization.md). |
 | `GameQuitting` | The application is quitting. | **Best effort**: raised at most once, from the application-quit message, because BepInEx IL2CPP does not reliably call plugin unload on exit. Keep handlers quick and do not rely on it alone for critical data; `OnUnload` follows. |
 
 Game-specific events (NPC spawned, round start/end, contraband scans) are **not** in 2.0; they need a game dump and

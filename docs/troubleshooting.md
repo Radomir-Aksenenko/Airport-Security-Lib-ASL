@@ -96,8 +96,12 @@ Report it with the stack trace. If an entire window fails you get a bare window 
 - Creating a window with an id you already used destroys the old one, so a stale reference you kept is dead.
 - Opening a window closes the F8 menu, and while F8 is open windows are frozen behind it (HUDs keep running).
 - A callback in your builder threw: check the log for `UI callback '...' threw`.
-- ASL creates an `EventSystem` when the game has none (`[ui] created an EventSystem (none was present).`) and heals a missing one within
-  a second while a window is open (a scene change can destroy the game's).
+- ASL creates an `EventSystem` only on demand (an interactive window or dialog is open and none exists;
+  `[ui] created an EventSystem (none was present).`) and removes its own if the game brings one. It heals a missing one within
+  a second while a window is open (a scene change can destroy the game's). HUDs never create one.
+- A window or HUD created in `OnLoad` / `OnAllModsLoaded` is built at once but appears only once the UI is Ready (first scene change, or
+  after ~60 frames); `IsOpen` is true meanwhile. Windows declared in the manifest `ui` are built after Ready, so `GetWindow(id)` returns
+  `null` for them during `OnLoad` / `OnAllModsLoaded`; look them up later (for example in `SceneChanged`).
 
 ### Text is invisible or the wrong font
 
@@ -172,7 +176,7 @@ If a handler throws 10 frames in a row, ASL logs `'<mod>': Update handler keeps 
 ## Console
 
 - The console opens with the <kbd>`</kbd> key (BackQuote); that character is not typed into the field.
-- There is no F8 row for the console key in this build; rebind it by adding `asl/console = F10` to `BepInEx/config/ASL.Keybinds.cfg`
+- The console key is rebindable on the F8 **ASL** page (or by editing `asl/console = F10` in `BepInEx/config/ASL.Keybinds.cfg`)
   ([console.md](console.md)).
 - `Unknown command 'x'. Type help.` - the command was never registered, or it clashed and you must use the qualified name
   `<shortId>.<name>` (see `help <name>`). Clashes log `Console command '...' is already registered by '...'`.

@@ -153,6 +153,9 @@ namespace ASL.Api
         /// Get (or create) a host-authoritative synced key/value store identified by <paramref name="id"/>
         /// — see <see cref="IAslSync"/>. The same id returns the same store; namespace it with your mod id
         /// (e.g. <c>"com.author.mymod/state"</c>) so mods don't share a store by accident.
+        /// <c>ctx.Net</c> is a per-mod wrapper, so this returns a per-mod wrapper around the shared store: the
+        /// same instance for the same id within one mod. Subscriptions and event handlers you add through
+        /// <c>ctx.Net</c> are removed automatically when your mod unloads or hot-reloads.
         /// </summary>
         IAslSync GetSync(string id);
 

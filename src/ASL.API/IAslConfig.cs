@@ -19,16 +19,19 @@ namespace ASL.Api
         /// Bind (create or fetch) a setting. The first call creates it with <paramref name="defaultValue"/>
         /// unless the file already holds a value. Setting <see cref="IConfigEntry{T}.Value"/> saves it.
         /// </summary>
+        /// <exception cref="NotSupportedException">The value type is not supported.</exception>
+        /// <exception cref="ArgumentException">Section or key is empty.</exception>
+        /// <exception cref="InvalidOperationException">The same section/key was already bound with another type.</exception>
         /// <param name="section">Group name in the file/menu.</param>
         /// <param name="key">Setting name, unique within the section.</param>
         /// <param name="defaultValue">Value used when nothing is saved.</param>
         /// <param name="description">Shown in the file and as a tooltip in the menu.</param>
         IConfigEntry<T> Bind<T>(string section, string key, T defaultValue, string description = null);
 
-        /// <summary>Bind a float limited to [<paramref name="min"/>, <paramref name="max"/>]; shown as a slider.</summary>
+        /// <summary>Bind a float limited to [<paramref name="min"/>, <paramref name="max"/>]; shown as a slider. Throws the same exceptions as <see cref="Bind{T}"/>.</summary>
         IConfigEntry<float> BindRange(string section, string key, float defaultValue, float min, float max, string description = null);
 
-        /// <summary>Bind an int limited to [<paramref name="min"/>, <paramref name="max"/>]; shown as a slider.</summary>
+        /// <summary>Bind an int limited to [<paramref name="min"/>, <paramref name="max"/>]; shown as a slider. Throws the same exceptions as <see cref="Bind{T}"/>.</summary>
         IConfigEntry<int> BindRange(string section, string key, int defaultValue, int min, int max, string description = null);
 
         /// <summary>

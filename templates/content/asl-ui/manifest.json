@@ -5,6 +5,7 @@
   "author": "yourname",
   "description": "A no-code mod with a window declared in ui/main.json.",
   "type": "content",
+  "minAslVersion": "2.0.0",
   "content": {},
   "ui": [ "ui/main.json" ]
 }

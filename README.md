@@ -62,15 +62,16 @@ Airport Security Sucks/
 | **Storage** (`ctx.Storage`) | 🧪 | Atomic per-mod JSON/text save data in `BepInEx/config/ASL/data/<modId>/`. Implemented, not yet verified in-game |
 | **Timers & coroutines** (`ctx.Timers`) | 🧪 | `After`/`Every`/`NextFrame`/`When` + coroutine-lite (`Wait.Seconds/Until/While/Frames`). Implemented, not yet verified in-game — [docs](docs/timers-and-events.md) |
 | **New events + isolation** | 🧪 | `LateUpdate`, `MenuVisibilityChanged`, `AllModsLoaded`, `LanguageChanged`, `GameQuitting`; per-mod `Update` isolation with backoff and a per-mod profiler. Implemented, not yet verified in-game |
-| **Dev console** (`ctx.Commands`) | 🧪 | `` ` `` opens a console: built-in commands (`help`, `mods`, `reload`, `config`, `perf`, …) and your own commands. Implemented, not yet verified in-game — [docs](docs/console.md) |
+| **Dev console** (`ctx.Commands`) | 🧪 | `` ` `` opens a console (rebindable on the F8 ASL page): built-in commands (`help`, `mods`, `reload`, `config`, `perf`, …) and your own commands. Implemented, not yet verified in-game — [docs](docs/console.md) |
 | **Manifest v2: dependencies & load order** | 🧪 | `dependencies` with version ranges, `optionalDependencies`, `loadAfter`/`loadBefore`, `minAslVersion`; deterministic order, per-mod states. Resolver unit-tested; not yet verified in-game — [docs](docs/mod-manager.md) |
 | **Mod Manager & ASL pages** | 🧪 | F8 > Mod Manager (state, errors, Enable/Disable) and F8 > ASL (FPS, per-mod cost, UI demo). Implemented, not yet verified in-game |
 | **Hot reload** (script mods) | 🧪 | Mod Manager *Reload*, console `reload <id>`, or `"hotReload": true`. Implemented, not yet verified in-game |
 | **Inter-mod services & messages** (`ctx.Mods`) | 🧪 | `Provide`/`GetService`, `Publish`/`Subscribe`, `OnAllModsLoaded`. Implemented, not yet verified in-game |
 | **Assets** (`ctx.Assets`) | 🧪 | `LoadTexture`/`LoadSprite` (PNG, 9-slice), `LoadAudio` (WAV), `LoadBundle`/`LoadBundleAsset`, safe paths. Implemented, not yet verified in-game — [docs](docs/assets-and-localization.md) |
 | **Localization** (`ctx.Loc`) | 🧪 | `lang/*.json` with game-language matching and English fallback. Implemented, not yet verified in-game |
-| **Content mods v2** | 🧪 | `audio` swaps (WAV), `strings` text overrides (experimental), `listAudioNames`, plus `ui`. Implemented, not yet verified in-game |
+| **Content mods v2** | 🧪 | `audio` swaps (WAV), `strings` text overrides (experimental), `listAudioNames`, plus `ui` (a content mod may ship only `ui`). Implemented, not yet verified in-game |
 | **`dotnet new` templates** | 🧪 | `asl-dll`, `asl-script`, `asl-content`, `asl-ui` — [templates/](templates/README.md). Generated mods are not yet verified in-game |
+| **Tooling: compile-check, api-compat, tests** | 🧪 | `tools/compile-check/build.sh` compiles ASL, samples, script mods and the templates (and validates template JSON) without the game, runs the unit tests and an `ASL.API` compat check — [docs/building.md](docs/building.md). Runs outside the game, so there is nothing to verify in-game |
 
 ✅ = verified in the running game. 🧪 = **Implemented, not yet verified in-game** (compiles, unit-tested where the logic is pure, but
 not run in the game yet). Dev tooling that is not an in-game feature: `tools/compile-check` type-checks everything without the game,

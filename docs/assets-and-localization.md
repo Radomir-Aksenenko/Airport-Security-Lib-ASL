@@ -81,7 +81,7 @@ ctx.Loc.LanguageChanged += RebuildTexts;               // the player changed the
 | `Language` | The game's current language token (for example `"en"`, `"ru"` or a name like `"Russian"`); `null` if unknown. |
 | `Get(key, args...)` | The text for `key`. Falls back to `en`, then to **the key itself**. `string.Format` is applied when `args` are given; a bad format string returns the raw text instead of throwing. |
 | `Has(key)` | True if the key exists in the current language or in English. |
-| `LanguageChanged` | Raised when the player switches the game language (also available as `ctx.Events.LanguageChanged`, which carries the token). |
+| `LanguageChanged` | Raised when the player switches the game language (also available as `ctx.Events.LanguageChanged`, which carries the token). It can fire once shortly after load if the detected language differs from the one at startup. |
 
 **Which file is used.** ASL looks at the files in `lang/` and the game's language token and picks the first match of:
 exact file name (`ru` for `ru`, case-insensitive) -> region/two-letter code (`en-US` or `pt_BR` use `en`) -> a known language name
