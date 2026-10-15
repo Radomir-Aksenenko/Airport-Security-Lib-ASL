@@ -63,11 +63,13 @@ for players.
 
 ## Notes
 
-- **Status:** these templates are written against the ASL 2.0 API. On the 2.0 branch, `ctx.Config`,
-  `ctx.Timers`, `ctx.Storage`, `ctx.Assets`, `ctx.Loc` and the UI toolkit (windows, `Toast`, JSON layouts)
-  are still placeholders that throw `NotImplementedException`, so the generated mods will not run until
-  those land. `asl-script` and `asl-ui` need the UI toolkit (`asl-ui` also needs the loader to read its
-  top-level `"ui"` list, which it does not yet). `asl-content` needs nothing new: texture swaps already work.
+- **Status:** the templates target the ASL 2.0 API, so **ASL 2.0 or newer must be installed** (the generated manifests do
+  not set `minAslVersion` yet; add `"minAslVersion": "2.0.0"` so ASL reports a clear `Incompatible` state instead of a runtime
+  error on older versions). The 2.0 services they use (config, timers, the UI toolkit, JSON layouts, the console) are implemented
+  but 🧪 **not yet verified in-game**; texture swaps in `asl-content` are the proven 0.1 feature. The templates themselves have
+  been compile-checked, not run in the game.
+- Next steps after generating a mod: [Build UI in minutes](../docs/ui.md), [config & storage](../docs/config-and-storage.md),
+  [manifest reference](../docs/manifest.md).
 - The DLL template targets `net6.0` (the game's runtime) and references `ASL.API.dll` from
   `<GamePath>\BepInEx\plugins\`. ASL must already be installed in that game folder.
 - `asl-content` ships no images. Add your own PNG and set `"file"` in `manifest.json`. The README in the

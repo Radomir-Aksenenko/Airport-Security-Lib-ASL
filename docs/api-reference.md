@@ -1,8 +1,23 @@
 # API reference
 
-The public, stable surface lives in **`ASL.API.dll`** (namespace `ASL.Api`). Mods compile
-against it; ASL ships it at runtime. Implementation details live in `ASL.dll` and are not part of
-the contract.
+The public surface lives in **`ASL.API.dll`** (namespace `ASL.Api`). Mods compile against it; ASL ships it at runtime.
+Implementation details live in `ASL.dll` and are not part of the contract. Every public member carries XML doc comments,
+so your IDE shows the same text as this page.
+
+> **Status.** The 0.1 surface (`AslMod.OnLoad/OnUnload`, `IModContext` members `ModId`..`Net`, events `Update`/`SceneChanged`/
+> `LocalPlayerChanged`, `Hooks`, the 0.1 `Menu` members, `Announce`, `Input`, `Net`) is ✅ verified in-game. Everything marked
+> **(2.0)** is 🧪 implemented but not yet verified in-game. 2.0 only *adds* to the API; nothing from 0.1 changed
+> ([upgrading](upgrading-to-2.0.md)). Each 2.0 area has its own guide; this page lists the members and links there.
+
+| Guide | Covers |
+|---|---|
+| [ui.md](ui.md) | `ctx.Ui`, windows, widgets, themes, JSON layouts, `ctx.Menu` pages |
+| [config-and-storage.md](config-and-storage.md) | `ctx.Config`, `ctx.Storage` |
+| [timers-and-events.md](timers-and-events.md) | `ctx.Events`, `ctx.Timers`, profiler |
+| [console.md](console.md) | `ctx.Commands`, the dev console |
+| [mod-manager.md](mod-manager.md) | `ctx.Mods`, `ctx.Info`, dependencies, states, hot reload |
+| [assets-and-localization.md](assets-and-localization.md) | `ctx.Assets`, `ctx.Loc`, content audio/strings |
+| [networking.md](networking.md) | `ctx.Net` |
 
 ## `AslMod`
 
@@ -12,30 +27,62 @@ Base class for script and DLL mods.
 public abstract class AslMod
 {
     public abstract void OnLoad(IModContext ctx);  // called once when the mod loads
-    public virtual void OnUnload() { }             // called on game shutdown (optional)
+    public virtual void OnAllModsLoaded() { }       // (2.0) after EVERY mod's OnLoad has run
+    public virtual void OnUnload() { }              // on game shutdown, unload or hot reload (optional)
 }
 ```
 
 Subclass it (any class name, any/no namespace), override `OnLoad`. ASL finds the first non-abstract
-`AslMod` subclass in your assembly, constructs it (parameterless), and calls `OnLoad`.
+`AslMod` subclass in your assembly, constructs it (parameterless), and calls `OnLoad`. Use `OnAllModsLoaded` to look up
+services other mods published without worrying about load order. `OnUnload` runs in reverse load order; after it
+everything your mod created through `ctx` is released automatically.
+
+## `AslVersion` (2.0)
+
+```csharp
+public static class AslVersion
+{
+    public const string Current = "2.0.0";
+    public static int Major { get; }
+    public static int Minor { get; }
+    public static int Patch { get; }
+    public static bool AtLeast(string version);      // false if the string cannot be parsed
+}
+```
+
+```csharp
+if (AslVersion.AtLeast("2.0.0")) { /* safe to use the UI toolkit */ }
+```
+
+`SemVersion` and `VersionRange` (also in `ASL.Api`) parse and compare versions and ranges such as `^1.2.0` for your own use
+([ranges](mod-manager.md#version-ranges)).
 
 ## `IModContext`
 
-Passed to `OnLoad`. Your handle into ASL.
+Passed to `OnLoad`. Your handle into ASL. Every member is non-null for DLL and script mods.
 
 ```csharp
 public interface IModContext
 {
-    string      ModId        { get; }  // "com.author.mymod"
-    string      ModName      { get; }  // human-readable
-    string      ModDirectory { get; }  // absolute path to your mod folder (load assets here)
-    IModLogger  Log          { get; }  // per-mod logger
-    IAslEvents  Events       { get; }  // game events
-    IModHooks   Hooks        { get; }  // opt-in Harmony hooks
-    IModMenu    Menu         { get; }  // in-game menu (F8)
-    IAslUi      Ui           { get; }  // on-screen UI (announcement banner)
-    IAslInput   Input        { get; }  // keyboard input + rebindable, conflict-checked keybinds
-    IAslNet     Net          { get; }  // networking: awareness + message transport
+    string        ModId        { get; }  // "com.author.mymod"
+    string        ModName      { get; }  // human-readable
+    string        ModDirectory { get; }  // absolute path to your mod folder
+    IModLogger    Log          { get; }  // per-mod logger
+    IAslEvents    Events       { get; }  // game events, per-mod isolated      (see timers-and-events.md)
+    IModHooks     Hooks        { get; }  // opt-in Harmony hooks
+    IModMenu      Menu         { get; }  // in-game menu (F8)
+    IAslUi        Ui           { get; }  // windows, HUDs, toasts, dialogs, announce
+    IAslInput     Input        { get; }  // keyboard input + rebindable, conflict-checked keybinds
+    IAslNet       Net          { get; }  // networking: awareness + message transport
+    // --- new in 2.0 ---
+    IAslConfig    Config       { get; }  // typed persisted settings, auto-shown in F8
+    IAslStorage   Storage      { get; }  // per-mod JSON save data
+    IAslTimers    Timers       { get; }  // delays, intervals, conditions, coroutines
+    IAslMods      Mods         { get; }  // other mods: info, services, messages
+    IAslCommands  Commands     { get; }  // dev-console commands
+    IAslAssets    Assets       { get; }  // textures, sprites, audio, bundles, text from the mod folder
+    IAslLocalization Loc       { get; }  // translations from lang/*.json
+    IModInfo      Info         { get; }  // this mod's own manifest info and state
 }
 ```
 
@@ -54,29 +101,32 @@ Output is tagged with your mod name and lands in `BepInEx\LogOutput.log` (and th
 
 ## Events
 
-`ctx.Events` (`IAslEvents`). Subscribe in `OnLoad`. Handlers run on the game's main thread.
+`ctx.Events` (`IAslEvents`). Subscribe in `OnLoad`. Handlers run on the game's main thread, each mod's inside its own
+try/catch. Full guide: [timers-and-events.md](timers-and-events.md#events-ctxevents).
 
 ```csharp
 public interface IAslEvents
 {
-    event Action          Update;             // every frame — keep handlers cheap
-    event Action<string>  SceneChanged;       // active scene name changed
-    event Action<MetaPlayer> LocalPlayerChanged; // local player set (non-null) or cleared (null)
+    event Action             Update;               // every frame - keep handlers cheap
+    event Action<string>     SceneChanged;         // active scene name changed
+    event Action<MetaPlayer> LocalPlayerChanged;   // local player set (non-null) or cleared (null)
+    event Action             LateUpdate;           // (2.0) every frame, after Update
+    event Action<bool>       MenuVisibilityChanged; // (2.0) F8 menu shown / hidden
+    event Action             AllModsLoaded;        // (2.0) once, after every mod's OnLoad
+    event Action<string>     LanguageChanged;      // (2.0) the player changed the game language
+    event Action             GameQuitting;         // (2.0) best effort, at most once
 }
 ```
 
-- **`Update`** is the per-frame workhorse. It is allocation-free in ASL; do not do heavy work
-  every frame.
-- **`SceneChanged`** / **`LocalPlayerChanged`** are detected by a lightweight poll (a few times a
-  second), so they cost nothing per frame. `LocalPlayerChanged` is debounced to avoid flicker
-  during transitions.
-- If an `Update`/`LateUpdate` handler throws, ASL logs it and keeps calling it every frame; after 10 failing
-  frames in a row it is retried with backoff (0.5 s, 1 s ... max 5 s, one log line per retry) and goes back to
-  every frame on the first success or on a scene / local-player change. It is never switched off permanently.
-- **`GameQuitting`** fires at most once, best effort, from the application-quit message (BepInEx IL2CPP does not
-  reliably call plugin unload on exit). Keep the handler quick; `OnUnload` runs right after, in reverse load order.
-- `MetaPlayer` is a game type from `Assembly-CSharp` (namespace `Metater`). Reference that interop
-  assembly (DLL mods) — script mods already have it.
+- **`Update`** is the per-frame workhorse. It is allocation-free in ASL; do not do heavy work every frame.
+- **`SceneChanged`** / **`LocalPlayerChanged`** are detected by a lightweight poll (a few times a second), so they cost
+  nothing per frame. `LocalPlayerChanged` is debounced to avoid flicker during transitions.
+- An exception in your `Update`/`LateUpdate` handler is logged and never reaches other mods. After 10 failing frames in a
+  row the handler is retried with backoff (0.5 s ... 5 s) and returns to every frame on the first success or on a scene /
+  local-player change. It is never switched off permanently.
+- `MetaPlayer` is a game type from `Assembly-CSharp` (namespace `Metater`). Reference that interop assembly (DLL mods);
+  script mods already have it.
+- Game-specific events (NPC spawned, round start/end, contraband scans) are not in 2.0; use [`Hooks`](#hooks).
 
 Example:
 ```csharp
@@ -130,6 +180,10 @@ public interface IModMenu
     void AddToggle(string label, bool initial, Action<bool> onChanged);
     void AddButton(string label, Action onClick);
     void AddSlider(string label, float min, float max, float initial, Action<float> onChanged);
+    // --- new in 2.0 ---
+    void AddPage(string title, Action<IUiContainer> build);   // a row that opens a rich sub-page built with the UI toolkit
+    void AddWindowButton(string label, IUiWindow window);     // a row that opens/toggles a window
+    void AddSeparator(string title = null);                   // visual group header row
 }
 ```
 
@@ -138,25 +192,57 @@ Example:
 ctx.Menu.AddToggle("God mode", false, on => _god = on);
 ctx.Menu.AddButton("Give item", () => GiveItem());
 ctx.Menu.AddSlider("Speed", 1f, 10f, 5f, v => _speed = v);
+
+ctx.Menu.AddSeparator("Advanced");                        // (2.0)
+ctx.Menu.AddPage("Debug tools", page => { page.AddHeader("Debug"); page.AddToggle("Verbose", false, on => _verbose = on); });
 ```
+
+The 0.1 rows render exactly as before. If you bind settings with `ctx.Config`, a **Settings** page is added to your mod's F8 page
+automatically ([config](config-and-storage.md#the-automatic-settings-page)). More in [ui.md](ui.md#f8-menu-pages).
 
 ## On-screen UI
 
-`ctx.Ui` (`IAslUi`). Drives the game's own widgets so your messages look native.
+`ctx.Ui` (`IAslUi`). `Announce` drives the game's own banner (✅ 0.1); everything else is the 2.0 UI toolkit. Full guide with
+every widget: **[ui.md](ui.md)**.
 
 ```csharp
 public interface IAslUi
 {
-    void Announce(string text, float seconds = 2.5f);  // the game's on-screen announcement banner
+    void Announce(string text, float seconds = 2.5f);   // the game's on-screen announcement banner (0.1)
+
+    // --- new in 2.0 ---
+    IUiWindow CreateWindow(string id, string title, UiWindowOptions options = null);   // hidden until Open()
+    IUiWindow CreateHud(string id, UiAnchor anchor, UiWindowOptions options = null);   // visible overlay, click-through
+    IUiWindow GetWindow(string id);                                                    // this mod's window by id, or null
+    void Toast(string text, UiToastKind kind = UiToastKind.Info, float seconds = 3f);
+    void Confirm(string title, string message, Action onYes, Action onNo = null, string yesText = "Yes", string noText = "No");
+    void Prompt(string title, string message, string initial, Action<string> onSubmit, Action onCancel = null);
+    void Alert(string title, string message, Action onClose = null);
+    IUiWindow LoadLayout(string relativeJsonPath);       // window from a JSON layout (null + logged error on failure)
+    void RegisterAction(string name, Action action);     // named actions for JSON layouts
+    void RegisterAction(string name, Action<string> action);
+    UiTheme Theme { get; set; }                          // this mod's default theme for new windows
+    bool IsTextInputFocused { get; }                     // an ASL text field has keyboard focus
 }
 ```
 
 ```csharp
 ctx.Ui.Announce("Round starting!");
-ctx.Ui.Announce("You win!", 4f);
+ctx.Ui.Announce("You win!", 4f);                         // safe before a level loads (logs instead of throwing)
+
+var win = ctx.Ui.CreateWindow("main", "My Mod");
+win.AddHeader("Hello");
+win.AddButton("Hi", () => ctx.Ui.Toast("Hi!", UiToastKind.Success), UiButtonStyle.Pill(UiVariant.Success));
+win.BindToggleKey(ctx.Input.RegisterKey("window", "Toggle window", KeyCode.F6));
 ```
 
-Safe to call before a level loads (it logs instead of throwing if the banner isn't up yet).
+Toolkit types, all in `ASL.Api`:
+
+| Group | Types |
+|---|---|
+| Window and elements | `IUiWindow`, `IUiContainer`, `IUiElement`, `IUiText`, `IUiButton`, `IUiToggle`, `IUiSlider`, `IUiInput`, `IUiDropdown`, `IUiProgress`, `IUiImage`, `IUiTabs` |
+| Options and styling | `UiWindowOptions`, `UiButtonStyle`, `UiTheme` |
+| Enums | `UiShape`, `UiVariant`, `UiSize`, `UiTextStyle`, `UiTextAlign`, `UiToggleStyle`, `UiToastKind`, `UiAnchor` |
 
 ## Input & keybinds
 
@@ -210,6 +296,133 @@ How conflicts are handled:
 
 Raw `GetKeyDown` / `GetKey` / `GetKeyUp` read the key straight from Unity, so they are **not** suppressed while the
 player types in a toolkit text field. Prefer `RegisterKey` (muted while typing) or check `ctx.Ui.IsTextInputFocused`.
+
+
+## Config, storage, timers, mods, commands, assets, localization (2.0)
+
+Each service is summarised here; the linked guide has behaviour, limits and more examples.
+
+### `ctx.Config` - [guide](config-and-storage.md)
+
+```csharp
+public interface IAslConfig
+{
+    IConfigEntry<T>     Bind<T>(string section, string key, T defaultValue, string description = null);   // bool,int,float,double,string,enum,KeyCode
+    IConfigEntry<float> BindRange(string section, string key, float defaultValue, float min, float max, string description = null);
+    IConfigEntry<int>   BindRange(string section, string key, int defaultValue, int min, int max, string description = null);
+    bool   ShowInMenu { get; set; }   // default true: entries appear on the mod's F8 Settings page
+    string FilePath   { get; }        // BepInEx/config/<modId>.cfg
+    void   Save();
+    void   Reload();
+    event  Action Changed;
+}
+
+public interface IConfigEntry<T>
+{
+    string Section { get; }  string Key { get; }  string Description { get; }
+    T Value { get; set; }    T DefaultValue { get; }          // setting Value saves and raises Changed
+    event Action<T> Changed;
+    void Reset();
+}
+```
+
+### `ctx.Storage` - [guide](config-and-storage.md#storage-ctxstorage)
+
+```csharp
+public interface IAslStorage
+{
+    string DataDirectory { get; }                  // BepInEx/config/ASL/data/<modId>/
+    void   Save<T>(string name, T value);          // JSON, atomic write
+    T      Load<T>(string name, T fallback = default);
+    bool   Exists(string name);
+    void   Delete(string name);
+    void   SaveText(string name, string text);
+    string LoadText(string name, string fallback = null);
+}
+```
+
+### `ctx.Timers` - [guide](timers-and-events.md#timers-ctxtimers)
+
+```csharp
+public interface IAslTimers
+{
+    IAslTimer After(float seconds, Action action, bool unscaled = true);
+    IAslTimer Every(float seconds, Action action, bool unscaled = true);
+    IAslTimer NextFrame(Action action);
+    IAslTimer When(Func<bool> condition, Action action, float timeoutSeconds = 0f);
+    IAslTimer Start(System.Collections.IEnumerator routine);   // yield null / seconds / Wait.Seconds|Until|While|Frames
+    void CancelAll();
+}
+public interface IAslTimer { bool IsActive { get; } void Cancel(); }
+public static class Wait { /* Seconds(float), Until(Func<bool>), While(Func<bool>), Frames(int) -> IAslWait */ }
+```
+
+### `ctx.Mods` and `ctx.Info` - [guide](mod-manager.md)
+
+```csharp
+public enum ModState { Loaded, Failed, Disabled, MissingDependency, Incompatible }
+
+public interface IModInfo
+{
+    string Id { get; }    string Name { get; }    string Version { get; }    string Author { get; }
+    string Description { get; }
+    string Kind { get; }                  // "dll" | "script" | "content"
+    string Directory { get; }
+    ModState State { get; }
+    string Error { get; }                 // null when fine
+    IReadOnlyList<string> Dependencies { get; }   // as written in the manifest
+    IReadOnlyList<string> Tags { get; }
+}
+
+public interface IAslMods
+{
+    IReadOnlyList<IModInfo> All { get; }
+    bool IsLoaded(string modId);
+    IModInfo Get(string modId);
+    void Provide<T>(T service) where T : class;                 // publish an API object for other mods
+    T GetService<T>(string fromModId = null) where T : class;   // first provider of exactly T, or that mod's
+    void Publish(string topic, object payload = null);          // synchronous cross-mod message
+    IDisposable Subscribe(string topic, Action<object> handler);
+    event Action AllModsLoaded;
+}
+```
+
+### `ctx.Commands` - [guide](console.md)
+
+```csharp
+public interface IAslCommands
+{
+    void Register(string name, string description, Action<string[]> handler);
+    void Register(string name, string description, Func<string[], string> handler);   // returned text is printed
+    void Unregister(string name);
+    bool Execute(string commandLine);
+    void Print(string text);
+}
+```
+
+### `ctx.Assets` and `ctx.Loc` - [guide](assets-and-localization.md)
+
+```csharp
+public interface IAslAssets
+{
+    string GetPath(string relativePath);                  // safe join inside the mod folder (throws on traversal)
+    byte[] ReadBytes(string relativePath);
+    string ReadText(string relativePath);
+    Texture2D LoadTexture(string relativePngPath);        // null + log on failure
+    Sprite    LoadSprite(string relativePngPath, float border = 0f);   // border > 0 = 9-sliced
+    AudioClip LoadAudio(string relativeWavPath);
+    AssetBundle LoadBundle(string relativePath);
+    UnityEngine.Object LoadBundleAsset(string bundleRelativePath, string assetName);
+}
+
+public interface IAslLocalization
+{
+    string Language { get; }                       // the game's language token, null if unknown
+    string Get(string key, params object[] args);  // lang/<lang>.json -> lang/en.json -> the key; string.Format with args
+    bool   Has(string key);
+    event  Action LanguageChanged;
+}
+```
 
 ## Networking
 
@@ -412,24 +625,3 @@ strings. See [networking.md](networking.md) for details and the send caveat.
 BepInEx plugin that wants to declare `[BepInDependency(AslInfo.Guid)]`. Most mods don't need this —
 they live in `mods/` and never touch BepInEx directly.
 
-## Dev console — `ctx.Commands` (🧪 not yet verified in-game)
-
-Press <kbd>`</kbd> (rebindable: F8 > ASL > Console) to open the console. Register your own commands:
-
-```csharp
-ctx.Commands.Register("give", "give <item> [count]", args => Give(args[0], args.Length > 1 ? int.Parse(args[1]) : 1));
-ctx.Commands.Register("where", "print position", args => "You are at " + player.position);   // returned text is printed
-```
-
-- Lines can hold several commands separated by `;`. Arguments split on spaces; `"double"` or `'single'` quotes keep
-  spaces; inside quotes `\"`, `\\`, `\n` work. Unknown commands print `Unknown command 'x'. Type help.`
-- Names are global and case-insensitive. Your command is always reachable as `<shortId>.<name>` (shortId = last
-  segment of your mod id, lower-cased); the bare name is yours only if nobody had it first (a warning is logged
-  otherwise). A handler that throws prints a red error line and is logged; the rest of the line keeps running.
-- Your commands are removed when your mod unloads or hot-reloads. `ctx.Commands.Print(text)` writes to the console
-  (TextMeshPro rich text such as `<color=#ff6b6b>` works); `Execute(line)` returns false if any command failed.
-- Built-ins: `help [cmd]`, `clear`, `echo`, `asl`, `mods`, `mod <id>`, `reload <id>`, `enable|disable <id>`, `scene`,
-  `fps`, `perf`, `players`, `net`, `config <modId> [section.key [value]]`, `toast`, `announce`, `ui.demo`,
-  `windows`, `timescale [v]` (only affects this machine in multiplayer), `log.mirror on|off`, `history`.
-- Tab completes command names, Up/Down browse history (last 50), Enter submits, Esc closes. The output keeps the
-  last 500 lines.

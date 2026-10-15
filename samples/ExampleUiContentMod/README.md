@@ -3,6 +3,9 @@
 A mod with **no code**: its whole interface is one JSON file. Drop this folder into the game's `mods/`
 folder, start the game and press **F9**.
 
+> **Status: 🧪 Implemented, not yet verified in-game.** Needs ASL 2.0 or newer. Full format reference:
+> [docs/ui.md](../../docs/ui.md#json-layouts-reference).
+
 ## How it works
 
 1. `manifest.json` has `"type": "content"` and a top-level `"ui"` list naming the layout files:
@@ -11,6 +14,8 @@ folder, start the game and press **F9**.
    { "id": "com.you.mymod", "name": "My Mod", "version": "1.0.0", "type": "content",
      "content": {}, "ui": [ "ui/panel.json" ] }
    ```
+
+   (A `content` object is required for `"type": "content"`, even an empty one.)
 
 2. Each layout file describes one window. The top level is always the window; its `children` are widgets:
 
@@ -30,7 +35,7 @@ folder, start the game and press **F9**.
 ## Node types
 
 `header`, `label`, `button`, `toggle`, `slider`, `input`, `dropdown`, `progress`, `image`, `spacer`,
-`separator`, and the containers `row`, `column`, `grid`, `scroll`, `group`, `tabs` (with `tab` entries).
+`separator`, and the containers `row`, `column`, `grid`, `scroll`, `group`, `tabs` (a `"tabs"` array of `{ "title": ..., "children": [...] }`).
 
 Buttons take `shape` (Rect, Rounded, Pill, Circle, Square, Native), `size` (Small, Medium, Large, XLarge) and
 `variant` (Primary, Secondary, Success, Danger, Warning, Ghost, Outline).
