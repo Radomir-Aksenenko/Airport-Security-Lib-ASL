@@ -36,6 +36,8 @@ Airport Security Sucks/
 | **DLL mods** (`type: dll`) | ✅ | Subclass `AslMod`, ship a `.dll` |
 | **Script mods** (`type: script`) | ✅ | Plain `.cs`, compiled at runtime with Roslyn — no build setup |
 | **Content mods** (`type: content`) | ✅ | Texture swaps: managed PNG decode → in-place write (readable) or reassign `Material.mainTexture` / UI `Image.sprite` / `RawImage.texture` (non-readable) + texture-name discovery |
+| **JSON UI layouts** | 🧪 | `ui/*.json` windows (all widgets, `bind: config:…`, built-in actions `close`/`open:`/`toast:`/`command:`…), loaded by `ctx.Ui.LoadLayout` or the manifest's top-level `"ui"` — also for **content mods** with no code. Not yet verified in-game |
+| **F8 Mod Manager / ASL / Settings** | 🧪 | F8 root gains **Mod Manager** (state, errors, Enable/Disable, script Reload) and **ASL** (FPS, per-mod cost, UI demo) pages; every mod with `ctx.Config` entries gets an auto-generated **Settings** page (toggle / slider / dropdown / text / key capture). Not yet verified in-game |
 | Event bus | ✅ | `Update`, `SceneChanged`, `LocalPlayerChanged` |
 | Opt-in hooks | ✅ | `IModHooks.TryPostfix(type, method, cb)` — install Harmony patches safely, on demand |
 | In-game menu | ✅ | `IModMenu` — toggles / buttons / sliders in a shared overlay; opened with **F8** or the **Mods** button ASL adds to the main menu |

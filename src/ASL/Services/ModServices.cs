@@ -119,13 +119,14 @@ namespace ASL
             var dir = info.Directory;
             var perf = new ModPerf(id);
             var events = new ModEvents(id, sharedBus, modLog, perf);
+            var ui = new ModUi(id, displayName, dir, sharedUi, modLog);
             var s = new ModServices
             {
                 _log = modLog,
                 ModId = id,
                 Perf = perf,
                 Events = events,
-                Ui = new ModUi(id, displayName, dir, sharedUi, modLog),
+                Ui = ui,
                 Config = new ModConfig(id, modLog),
                 Storage = new ModStorage(id, modLog),
                 Timers = new ModTimers(id, modLog, sharedBus as EventBus, perf),
@@ -135,6 +136,7 @@ namespace ASL
                 Loc = new ModLocalization(id, dir, modLog, sharedBus),
                 Info = info,
             };
+            ui.Attach(s);      // config binds / assets for JSON layouts; ReleaseAll on the Releasing event (windows, HUDs, bindings)
             events.Attach();   // join the per-frame list now so Update order == load order
             return s;
         }

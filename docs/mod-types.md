@@ -8,7 +8,9 @@ omitted, ASL auto-detects (a `.dll` → dll, a `.cs` → script, otherwise conte
 
 ## Content mods
 
-**No code.** Ship assets + a declarative manifest. Best for non-programmers.
+**No code.** Ship assets + a declarative manifest. Best for non-programmers. 🧪 A content mod can also ship
+windows: list JSON layouts under the manifest's top-level `"ui"` and use the built-in actions (`close`, `open:`,
+`toast:`, `announce:`, `command:`) — see [manifest.md](manifest.md#ui-json-layouts).
 
 ```
 mods/RetextureStars/
