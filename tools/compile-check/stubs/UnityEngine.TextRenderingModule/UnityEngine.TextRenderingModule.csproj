@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>UnityEngine.TextRenderingModule</AssemblyName><RootNamespace>UnityEngine.TextRenderingModule</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+  </ItemGroup>
+</Project>

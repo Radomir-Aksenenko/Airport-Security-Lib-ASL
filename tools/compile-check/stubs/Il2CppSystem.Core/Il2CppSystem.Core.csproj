@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Il2CppSystem.Core</AssemblyName><RootNamespace>Il2CppSystem.Core</RootNamespace></PropertyGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Assembly-CSharp</AssemblyName><RootNamespace>Assembly-CSharp</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.UI/UnityEngine.UI.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.UIModule/UnityEngine.UIModule.csproj" Private="false" />
+    <ProjectReference Include="../Unity.TextMeshPro/Unity.TextMeshPro.csproj" Private="false" />
+    <ProjectReference Include="../Mirror/Mirror.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.PhysicsModule/UnityEngine.PhysicsModule.csproj" Private="false" />
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>UnityEngine.ImageConversionModule</AssemblyName><RootNamespace>UnityEngine.ImageConversionModule</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+  </ItemGroup>
+</Project>

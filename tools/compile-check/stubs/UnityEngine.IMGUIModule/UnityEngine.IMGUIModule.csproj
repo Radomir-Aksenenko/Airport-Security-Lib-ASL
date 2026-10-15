@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>UnityEngine.IMGUIModule</AssemblyName><RootNamespace>UnityEngine.IMGUIModule</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+      <ProjectReference Include="../UnityEngine.TextRenderingModule/UnityEngine.TextRenderingModule.csproj" Private="false" />
+  </ItemGroup>
+</Project>

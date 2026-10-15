@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Il2Cppmscorlib</AssemblyName><RootNamespace>Il2Cppmscorlib</RootNamespace></PropertyGroup>
+</Project>

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>com.rlabrecque.steamworks.net</AssemblyName><RootNamespace>com.rlabrecque.steamworks.net</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+  </ItemGroup>
+</Project>

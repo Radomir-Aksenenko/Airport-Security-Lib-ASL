@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Aggregate project: building it builds every stub interop assembly (in dependency order) into $(StubOutDir). -->
+  <PropertyGroup>
+    <AssemblyName>AllStubs</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutDir>$(MSBuildThisFileDirectory)obj/allstubs-out/</OutDir>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+    <ProjectReference Include="Il2CppSystem/Il2CppSystem.csproj" Private="false" />
+    <ProjectReference Include="Il2CppSystem.Core/Il2CppSystem.Core.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine/UnityEngine.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.UIModule/UnityEngine.UIModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.UI/UnityEngine.UI.csproj" Private="false" />
+    <ProjectReference Include="Unity.TextMeshPro/Unity.TextMeshPro.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.ImageConversionModule/UnityEngine.ImageConversionModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.IMGUIModule/UnityEngine.IMGUIModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.InputLegacyModule/UnityEngine.InputLegacyModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.PhysicsModule/UnityEngine.PhysicsModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.AIModule/UnityEngine.AIModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.AudioModule/UnityEngine.AudioModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.AssetBundleModule/UnityEngine.AssetBundleModule.csproj" Private="false" />
+    <ProjectReference Include="UnityEngine.TextRenderingModule/UnityEngine.TextRenderingModule.csproj" Private="false" />
+    <ProjectReference Include="Assembly-CSharp/Assembly-CSharp.csproj" Private="false" />
+    <ProjectReference Include="Mirror/Mirror.csproj" Private="false" />
+    <ProjectReference Include="com.rlabrecque.steamworks.net/com.rlabrecque.steamworks.net.csproj" Private="false" />
+  </ItemGroup>
+</Project>

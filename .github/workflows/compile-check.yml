@@ -1,0 +1,28 @@
+name: compile-check
+
+# Type-checks ASL, ASL.API, the samples and the script-mod sample on a clean Linux box, WITHOUT the game:
+# real BepInEx core DLLs + stub Unity/game interop assemblies (tools/compile-check). A pass is a smoke test,
+# not proof the real build / in-game behaviour is fine - the build against the game's own interop is authoritative.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compile-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x   # ASL.slnx (the .slnx solution format) needs the .NET 9 SDK
+
+      - name: Cache BepInEx download
+        uses: actions/cache@v4
+        with:
+          path: tools/compile-check/.cache
+          key: compile-check-bepinex-be788-v1
+
+      - name: Compile-check
+        run: bash tools/compile-check/build.sh

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>Unity.TextMeshPro</AssemblyName><RootNamespace>Unity.TextMeshPro</RootNamespace></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityEngine.CoreModule/UnityEngine.CoreModule.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.UI/UnityEngine.UI.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.UIModule/UnityEngine.UIModule.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.TextRenderingModule/UnityEngine.TextRenderingModule.csproj" Private="false" />
+    <ProjectReference Include="../UnityEngine.IMGUIModule/UnityEngine.IMGUIModule.csproj" Private="false" />
+    <ProjectReference Include="../Il2Cppmscorlib/Il2Cppmscorlib.csproj" Private="false" />
+  </ItemGroup>
+</Project>
