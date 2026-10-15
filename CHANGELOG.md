@@ -4,33 +4,101 @@ All notable changes to **ASL — Airport Security Lib** are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); ASL is pre-1.0, so the public API
 (`ASL.API`) may still change between minor versions until 1.0.
 
-## [Unreleased] — 2.0 hardening (not yet verified in-game)
+## [2.0.0] — Unreleased
 
-- JSON UI layouts (`ui/*.json`): pure `LayoutParser` (`ASL.Core`, unit-tested) + `LayoutBuilder`; `ctx.Ui.LoadLayout`
-  and `RegisterAction` implemented; the manifest's top-level `ui` loads layouts for any mod kind, content mods
-  included (built-in actions `close`, `open:`, `toggle:`, `toast:`, `announce:`, `command:`; `bind: config:S.K`
-  two-way config binding; `toggleKey` registers a rebindable keybind). A mod's windows, HUDs and bindings are
-  destroyed on unload / hot reload.
-- F8 root: built-in **Mod Manager** (summary, per-mod state badge / error / description / dependencies,
-  Enable/Disable via `ASL.ModStates.json`, Reload for script mods) and **ASL** (version, FPS, per-mod
-  Update/LateUpdate/timer cost, UI demo, reset window positions) pages above the unchanged mod list.
-- F8 mod pages with `ctx.Config` entries (and `ShowInMenu`) get an auto-generated **Settings** page.
+ASL 2.0 is **fully backward compatible with 0.1**: no public member of `ASL.API` was removed or changed (enforced by an
+ApiCompat check against `main`), the 0.1 samples are kept as regression tests, and every new manifest field is optional. See
+[docs/upgrading-to-2.0.md](docs/upgrading-to-2.0.md).
 
-- `ctx.Events.Update` / `LateUpdate`: a throwing handler is no longer switched off after 10 failing frames; it is
-  retried with backoff (0.5 s ... 5 s) and returns to every-frame on the first success or a scene / player change.
-- Hot reload and unload now clear a mod's keybind `Pressed` handlers, localization/config subscriptions and cached
-  assets (bundles unloaded, textures/sprites/clips destroyed). A failed `OnLoad` or reload compile also clears the
-  mod's F8 rows.
-- `GameQuitting` / `OnUnload` also run from the application-quit message (best effort; keep handlers quick). Mods
-  unload in reverse load order. Mods whose hard dependency failed to load are skipped (`MissingDependency`).
-- `SemVersion` accepts a 4th numeric component (`1.0.0.0`). `VersionRange` excludes pre-releases unless a bound is a
-  pre-release of the same `major.minor.patch` (npm semantics), so `^1.0.0` no longer accepts `2.0.0-beta.1`.
-- Manifest fields `icon`, `website`, `minAslVersion`, `hotReload`, `content.*` tolerate a wrong JSON shape
+> **Status: 🧪 everything below is implemented and compile-checked but has not been verified in-game yet.** Features are
+> only promoted to "working" in the docs after `BepInEx\LogOutput.log` confirms them. Pure logic (versions, dependency
+> ordering, layout parsing, console tokenizer, scheduler, WAV/language/storage-name helpers, manifest parsing) is covered by unit tests.
+
+### Added
+
+- **UI toolkit** (`ctx.Ui`, [docs/ui.md](docs/ui.md)): `CreateWindow`, `CreateHud`, `GetWindow`, `Toast`, `Confirm`, `Prompt`,
+  `Alert`, `Theme`, `IsTextInputFocused`. Widgets: labels (`UiTextStyle`), live labels, buttons, icon buttons, toggles (switch /
+  checkbox / button), sliders, text inputs, dropdowns, progress bars, images, keybind rows, spacers, separators; containers: row,
+  column, grid, scroll view, group, tabs. Every element has `Id`, `Visible`, `Interactable`, `Tooltip`, `SetSize`, `SetFlexible`.
+  - Buttons: `UiShape` (Rect, Rounded, Pill, Circle, Square, Native game clone) × `UiSize` (32/44/60/76 px) × `UiVariant`
+    (Primary, Secondary, Success, Danger, Warning, Ghost, Outline), custom width/height/colours/icon via `UiButtonStyle`.
+  - Themes: `UiTheme` presets Default, Dark, Light, Game, HighContrast, or build your own; `UiWindowOptions` for size, anchor, modal,
+    draggable, cursor/input capture, escape-to-close, layer order.
+  - Windows are drawn by one driver that polls only open windows; shapes are generated procedurally; the game's own TextMeshPro font is used.
+  - Cursor and input handling: windows free the cursor and block player input; a focused text field mutes mod keybinds and F8;
+    Escape closes the top-most window; windows remember where they were dragged (`BepInEx/config/ASL.Windows.json`); opening a window closes F8.
+  - Toasts (stacked, top-right, max 5) and modal dialogs; widgets that fail to build are replaced by an inert `[widget unavailable]` placeholder.
+- **JSON UI layouts** (`ui/*.json`): pure, unit-tested `LayoutParser` + `LayoutBuilder`; `ctx.Ui.LoadLayout`, `RegisterAction`
+  (with and without a value); the manifest's top-level `ui` loads layouts for any mod kind, **content mods included**. Built-in actions
+  `close`, `open:`, `toggle:`, `toast:`, `announce:`, `command:`; `"bind": "config:Section.Key"` two-way config binding; `toggleKey`
+  registers a rebindable keybind. Unknown types/fields are warnings, never errors.
+- **F8 menu**: `IModMenu.AddPage`, `AddWindowButton`, `AddSeparator`; built-in **Mod Manager** (state badge, error, description,
+  dependencies, Enable/Disable, script Reload) and **ASL** (version, FPS, per-mod cost, UI demo, reset window positions) pages above the
+  unchanged mod list; the root list paginates when there are more mods than fit.
+- **Config** (`ctx.Config`, [docs](docs/config-and-storage.md)): typed, persisted per-mod settings (`Bind`, `BindRange`, `ShowInMenu`,
+  `Save`, `Reload`, `Changed`) in `BepInEx/config/<modId>.cfg`; an automatic **Settings** page in F8 (toggle / slider / dropdown /
+  text / key capture / reset to defaults).
+- **Storage** (`ctx.Storage`): atomic per-mod JSON and text save data in `BepInEx/config/ASL/data/<modId>/`, sanitised names.
+- **Timers** (`ctx.Timers`, [docs](docs/timers-and-events.md)): `After`, `Every`, `NextFrame`, `When`, `CancelAll` and coroutine-lite
+  (`Start` + `Wait.Seconds/Until/While/Frames`); allocation-free when idle, cancelled on unload.
+- **Events**: `LateUpdate`, `MenuVisibilityChanged`, `AllModsLoaded`, `LanguageChanged`, `GameQuitting`; `AslMod.OnAllModsLoaded()`.
+- **Profiler**: per-mod `Update` / `LateUpdate` / timer cost, in F8 > ASL and the console `perf` command.
+- **Dev console** (`ctx.Commands`, [docs](docs/console.md)): `` ` `` opens it; tokenizer with quotes and `;`, history, Tab completion, a 500-line
+  buffer, optional BepInEx log mirror, ~20 built-ins (`help`, `mods`, `mod`, `reload`, `enable`, `disable`, `config`, `perf`, `ui.demo`,
+  `timescale`, …); mods register commands with qualified `<shortId>.<name>` fallbacks.
+- **Mods** (`ctx.Mods`, `ctx.Info`, [docs](docs/mod-manager.md)): `IModInfo` / `ModState`, installed-mod list, cross-mod services
+  (`Provide` / `GetService`) and topics (`Publish` / `Subscribe`).
+- **Manifest v2** (optional fields): `dependencies` and `optionalDependencies` with version ranges, `loadAfter`, `loadBefore`,
+  `minAslVersion`, `tags`, `website`, `icon`, `ui`, `hotReload`. Three-phase loading with a deterministic dependency-aware order;
+  per-mod states `Loaded` / `Failed` / `Disabled` / `MissingDependency` / `Incompatible`; enable/disable persisted in
+  `BepInEx/config/ASL.ModStates.json` (applies next launch); duplicate ids and dependency cycles fail the affected mods.
+- **Hot reload** for script mods: Mod Manager *Reload*, console `reload <id>`, or `"hotReload": true` (sources polled once a second).
+- **Versioning helpers**: `AslVersion` (`Current`, `AtLeast`), `SemVersion`, `VersionRange` (`>=` `>` `<` `<=` `=` `^` `~`, bare, `*`).
+- **Assets** (`ctx.Assets`) and **localization** (`ctx.Loc`, [docs](docs/assets-and-localization.md)): safe-path file access, cached PNG
+  textures/sprites (9-slice), managed WAV decode to `AudioClip`, AssetBundles; `lang/*.json` with game-language matching and English fallback.
+- **Content mods v2**: `content.audio` (WAV clip swaps), `content.strings` (experimental exact-text overrides), `content.listAudioNames`.
+- **Templates** (`templates/`): `dotnet new asl-dll | asl-script | asl-content | asl-ui`.
+- **Samples**: `UiShowcase` (DLL, in the solution and deployed by the default build) and `ExampleUiContentMod` (no-code UI).
+- **Tooling**: `tools/compile-check` (real BepInEx core + stub interop; compiles ASL, samples and script mods without the game,
+  runs the unit tests, and checks `ASL.API` for breaking changes against `main`), `tests/ASL.Tests` and `tests/ASL.Data.Tests`, and a CI workflow.
+- **Docs**: UI guide, config & storage, timers & events, console, mod manager, assets & localization, upgrading to 2.0; the API reference,
+  manifest, mod types, getting started, building and troubleshooting pages updated.
+
+### Changed
+
+- Version is `2.0.0` (`Directory.Build.props`, `AslInfo.Version`, `AslVersion.Current`).
+- `ctx.Events` is a per-mod view of the bus: each mod's `Update` / `LateUpdate` handlers run in their own try/catch in mod load order and
+  are timed. A mod that throws 10 frames in a row is retried with backoff (0.5 s … 5 s, one log line per retry) and returns to every
+  frame on the first success or on a scene / player change; it is never switched off permanently.
+- Mods load in a dependency-aware order (ties by folder name); manifests with no v2 fields load in folder order with the same log lines
+  as before. A mod whose hard dependency failed to load is skipped (`MissingDependency`).
+- Mods unload in reverse load order; `GameQuitting` and `OnUnload` also run from the application-quit message (best effort).
+- Unload, failed `OnLoad` and hot reload release everything a mod created through its context (event handlers, timers, windows and HUDs,
+  commands, hook callbacks, keybind `Pressed` handlers, cross-mod services and subscriptions, config/localization subscriptions, cached
+  assets: bundles unloaded, textures/sprites/clips destroyed) and clear its F8 rows.
+- Opening a window or dialog closes the F8 menu; while an ASL text field has focus, `IAslKeybind` and F8 are suppressed (raw
+  `ctx.Input.GetKey*` is unchanged).
+- Manifest fields `icon`, `website`, `minAslVersion`, `hotReload`, `ui`, the dependency lists and `content.*` tolerate a wrong JSON shape
   (ignored / default) instead of failing the whole manifest. `hotReload` accepts `true`/`false`/`"true"`/`1`.
-- Storage / config file names that had to be sanitized now get a short stable hash suffix (`a/b` -> `a_b~a22d4fe9`),
-  so `a/b` and `a_b` no longer share a file; already-clean names are unchanged. WAV `data` chunks of size 0 use the
-  rest of the file. Content audio swaps keep raw bytes and decode on first use; string overrides skip prefabs/assets
-  and cap work per pass. `MenuVisibilityChanged` is raised after the native menu has reacted.
+- `SemVersion` accepts a 4th numeric component (`1.0.0.0`). `VersionRange` follows npm pre-release semantics: a pre-release only satisfies a range
+  that names a pre-release of the same `major.minor.patch`, so `^1.0.0` does not accept `2.0.0-beta.1`.
+- Storage / config file names that had to be sanitised get a short stable hash suffix (`a/b` becomes `a_b~a22d4fe9`), so `a/b` and `a_b` never share a file;
+  already-clean names are unchanged.
+- WAV `data` chunks of size 0 use the rest of the file. Content audio swaps keep the raw bytes and decode on first use; string overrides skip
+  prefabs/assets and cap work per pass. `MenuVisibilityChanged` is raised after the native menu has reacted.
+- `docs/building.md`: the solution now contains `UiShowcase`; `tests/` and `templates/` are intentionally outside it.
+
+### Fixed
+
+- A throwing `Update` handler in one mod no longer stops the handlers of the mods after it (0.1 ran them as one multicast delegate).
+- `OnUnload` / `GameQuitting` were not reliably run when the game exits (BepInEx IL2CPP does not call plugin unload); they now also run from
+  the application-quit message.
+
+### Known limitations
+
+- None of the 2.0 features has been run in the game yet (see the status note above).
+- The dev console's open key (`asl/console`, default BackQuote) has no row in the F8 menu; rebind it in `BepInEx/config/ASL.Keybinds.cfg`.
+- Game-specific events (NPC spawned, round start/end, contraband scans) and an RPC helper for the networking layer are not part of 2.0.
 
 ## [0.1.0] — 2026-06-17
 
@@ -74,4 +142,5 @@ First public release. Everything below is implemented and verified in-game.
 - **Documentation** — getting started, mod types, manifest reference, API reference, building from
   source, networking, and troubleshooting.
 
+[2.0.0]: https://github.com/Radomir-Aksenenko/Airport-Security-Lib-ASL/compare/v0.1.0...2.0
 [0.1.0]: https://github.com/Radomir-Aksenenko/Airport-Security-Lib-ASL/releases/tag/v0.1.0

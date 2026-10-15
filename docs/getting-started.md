@@ -12,9 +12,11 @@
      *(these power script mods; you can omit them if you never use `type: script` mods)*
 3. Launch the game. In `BepInEx\LogOutput.log` you should see:
    ```
-   [Info :ASL - Airport Security Lib] ASL - Airport Security Lib v0.1.0 - booting.
+   [Info :ASL - Airport Security Lib] ASL - Airport Security Lib v2.0.0 - booting.
    [Info :ASL - Airport Security Lib] Core online.
    ```
+   In the game, press **F8** to open ASL's menu (it lists **Mod Manager**, **ASL** and your mods) and the
+   <kbd>`</kbd> key for the 🧪 [dev console](console.md).
 4. ASL creates a `mods\` folder next to the game executable on first run. Drop mods there.
 
 ## For players: installing a mod
@@ -80,3 +82,28 @@ public sealed class HelloScript : AslMod
 ```
 
 Launch the game — ASL compiles and runs it. Watch `LogOutput.log` for your messages.
+
+## For modders: start from a template (`dotnet new`)
+
+ASL ships `dotnet new` templates (🧪 new in 2.0) so you never start from an empty folder:
+
+```bash
+dotnet new install ./templates/content/asl-script       # once; or install the packed ASL.Templates nupkg
+dotnet new asl-script -n CoolScript                    # script mod: Main.cs + manifest.json, no build
+```
+
+| Template | Creates |
+|---|---|
+| `asl-script` | A script mod with a window, a button and a toast. Copy the folder into `mods\`. |
+| `asl-dll` | A compiled DLL mod project (config, key-toggled window, timer, console command) that builds into `<GamePath>\mods\<Name>\`. |
+| `asl-content` | A no-code texture-swap mod. |
+| `asl-ui` | A no-code window declared in `ui/main.json`. |
+
+Install, parameters (`--param:author`) and build instructions: [templates/README.md](../templates/README.md).
+
+## Next steps
+
+- Make a window with buttons, toggles and sliders in minutes: [UI guide](ui.md).
+- Save settings the player can edit in game: [config and storage](config-and-storage.md).
+- Test faster: reload script mods with `reload <id>` or `"hotReload": true` ([mod manager](mod-manager.md)), and poke at things from the [console](console.md).
+- Coming from ASL 0.1? Nothing breaks: [upgrading to 2.0](upgrading-to-2.0.md).

@@ -8,9 +8,11 @@ omitted, ASL auto-detects (a `.dll` → dll, a `.cs` → script, otherwise conte
 
 ## Content mods
 
-**No code.** Ship assets + a declarative manifest. Best for non-programmers. 🧪 A content mod can also ship
-windows: list JSON layouts under the manifest's top-level `"ui"` and use the built-in actions (`close`, `open:`,
-`toast:`, `announce:`, `command:`) — see [manifest.md](manifest.md#ui-json-layouts).
+**No code.** Ship assets + a declarative manifest. Best for non-programmers. A content mod can swap
+**textures** (✅), and in 2.0 also **audio**, **on-screen text** and ship **windows** declared in JSON (all 🧪 not yet
+verified in-game, see below).
+
+Start one with `dotnet new asl-content` (textures) or `dotnet new asl-ui` (a window) - see [templates](../templates/README.md).
 
 ```
 mods/RetextureStars/
@@ -54,6 +56,29 @@ into RGBA32 and writes it the marshal-safe way:
 > slots**, and **atlas sub-sprites** (an `Image` showing one region of a packed atlas — the rebuilt
 > sprite uses the whole replacement, centred pivot). Use `"listTextureNames": true` to discover valid
 > `target` names (the log also shows each texture's `readable` flag).
+
+### Content v2: audio, text and UI (2.0, 🧪)
+
+All optional, all in the same `content` object (full details: [assets-and-localization.md](assets-and-localization.md#content-mods-v2-audio-and-strings)):
+
+```json
+{
+  "id": "com.you.pack", "name": "Pack", "version": "1.0.0", "type": "content",
+  "content": {
+    "listAudioNames": true,
+    "audio":   [ { "target": "door_open", "file": "audio/door.wav" } ],
+    "strings": { "Boarding pass": "Ticket to ride" }
+  },
+  "ui": [ "ui/panel.json" ]
+}
+```
+
+- `audio[]` replaces the `AudioClip` named `target` with your WAV on every AudioSource using it. `listAudioNames: true` logs the
+  clip names so you can find targets (like `listTextureNames`).
+- `strings` rewrites on-screen text that equals a key exactly. **Experimental**: the game may re-set a label and undo it.
+- `ui` lists [JSON layout](ui.md#json-layouts-reference) files; each becomes a window with built-in actions (`toast:`, `announce:`,
+  `command:`, `open:`, `toggle:`, `close`). Example: [`samples/ExampleUiContentMod`](../samples/ExampleUiContentMod). A content mod
+  must still contain a `content` object (`{}` is fine).
 
 ---
 
@@ -99,6 +124,10 @@ public sealed class MyScript : AslMod
   and touch game types exactly like a compiled mod.
 - Compile errors are written to `LogOutput.log` with line numbers; the mod is skipped, the game
   runs on.
+- 🧪 **Hot reload (2.0):** reload a script mod without restarting the game from F8 > Mod Manager > Reload or the console
+  command `reload <id>`, or add `"hotReload": true` to the manifest to reload automatically when you save the `.cs`
+  files. Details and limits: [mod-manager.md](mod-manager.md#hot-reload-script-mods).
+- Start from a template: `dotnet new asl-script -n MyScript` ([templates](../templates/README.md)).
 
 Requires the Roslyn DLLs to be present in `plugins\` (shipped with ASL) — see
 [getting started](getting-started.md).
@@ -167,6 +196,10 @@ Notes:
 - `entry` is optional; ASL otherwise loads the first `.dll` in the folder.
 - Reference `ASL.API.dll` with `Private=false` so your mod resolves against the single copy ASL
   already loaded (avoids type-identity mismatches).
+- Start from a template: `dotnet new asl-dll -n MyMod` creates this project (with `GamePath` handling and a deploy step)
+  plus a working 2.0 starter ([templates](../templates/README.md)). DLL mods cannot be hot reloaded.
+- 🧪 2.0 adds `AslMod.OnAllModsLoaded()` (runs after every mod's `OnLoad`) and a manifest `minAslVersion`/`dependencies`
+  ([manifest](manifest.md)).
 
 ---
 
@@ -180,8 +213,17 @@ Notes:
 - `ctx.Events` — the [event bus](api-reference.md#events): frame tick, scene and local-player changes.
 - `ctx.Hooks` — [opt-in Harmony hooks](api-reference.md#hooks) on game methods.
 - `ctx.Menu` — the [in-game menu](api-reference.md#menu) (F8): register toggles, buttons, sliders.
-- `ctx.Ui` — [on-screen UI](api-reference.md#on-screen-ui): the game's announcement banner.
+- `ctx.Ui` — [on-screen UI](api-reference.md#on-screen-ui): the game's announcement banner (and, in 2.0, the UI toolkit).
 - `ctx.Input` — [input & keybinds](api-reference.md#input--keybinds): rebindable named keys plus raw key queries.
 - `ctx.Net` — [networking](networking.md): host/client state, player identity, a host-authoritative synced store, and a host↔client message transport.
+
+New in 2.0 (🧪, all non-null for DLL and script mods):
+
+- `ctx.Ui` is now a full toolkit: windows, HUDs, toasts, dialogs and JSON layouts - [ui.md](ui.md).
+- `ctx.Config` / `ctx.Storage` — typed settings (auto-shown in F8) and save data - [config-and-storage.md](config-and-storage.md).
+- `ctx.Timers` — delays, intervals, conditions, coroutines - [timers-and-events.md](timers-and-events.md).
+- `ctx.Mods` / `ctx.Info` — other mods, shared services, topics, your own info - [mod-manager.md](mod-manager.md).
+- `ctx.Commands` — dev-console commands - [console.md](console.md).
+- `ctx.Assets` / `ctx.Loc` — textures, sprites, audio, bundles; translations - [assets-and-localization.md](assets-and-localization.md).
 
 See the full [API reference](api-reference.md).
