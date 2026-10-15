@@ -108,6 +108,8 @@ namespace ASL
         // the camera doesn't spin while you use the menu.
         private void LateUpdate()
         {
+            AslPlugin.Bus?.RaiseLateUpdate();   // per-frame, allocation-free
+
             var menu = AslPlugin.Menu;
             bool visible = menu != null && menu.Visible;
 

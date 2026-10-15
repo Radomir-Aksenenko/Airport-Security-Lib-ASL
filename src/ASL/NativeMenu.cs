@@ -259,6 +259,12 @@ namespace ASL
                                 }, idx++);
                                 break;
                             }
+                            case PageControl pc:
+                                AddRow(pc.Label + "  >", true, () => _log.LogInfo($"[menu] page '{pc.Label}' not implemented yet."), idx++);
+                                break;
+                            case WindowButtonControl wc:
+                                AddRow(wc.Label, true, () => _log.LogInfo($"[menu] window button '{wc.Label}' not implemented yet."), idx++);
+                                break;
                             case KeybindControl kc:
                             {
                                 GameObject row = null;

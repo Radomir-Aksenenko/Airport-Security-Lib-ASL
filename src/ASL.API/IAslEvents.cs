@@ -24,6 +24,21 @@ namespace ASL.Api
         /// </summary>
         event Action<MetaPlayer> LocalPlayerChanged;
 
+        /// <summary>Fires once per frame after all Update logic (Unity LateUpdate). Keep handlers cheap.</summary>
+        event Action LateUpdate;
+
+        /// <summary>Fires when ASL's F8 menu is shown (true) or hidden (false).</summary>
+        event Action<bool> MenuVisibilityChanged;
+
+        /// <summary>Fires once, after every mod's <c>OnLoad</c> has run (same moment as <see cref="AslMod.OnAllModsLoaded"/>).</summary>
+        event Action AllModsLoaded;
+
+        /// <summary>Fires when the player changes the game language; the argument is the new language token.</summary>
+        event Action<string> LanguageChanged;
+
+        /// <summary>Fires when the game is shutting down (or ASL unloads). Save your state here.</summary>
+        event Action GameQuitting;
+
         // Domain hooks (e.g. contraband scans, NPC spawns) arrive in a later phase via an
         // opt-in, collision-safe mechanism — not blanket Harmony patches on hot methods.
     }

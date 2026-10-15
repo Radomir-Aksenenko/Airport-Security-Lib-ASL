@@ -5,10 +5,11 @@ using BepInEx.Logging;
 namespace ASL
 {
     /// <summary>
-    /// Implements <see cref="IAslUi"/>. One shared instance for all mods — the announcement banner is a
+    /// Shared (one instance for all mods) helper behind <c>IAslUi.Announce</c> — the announcement banner is a
     /// single global widget. Wraps the game's <c>LocalAnnouncementText</c> so mods don't each re-derive it.
+    /// The per-mod <see cref="IAslUi"/> implementation is <see cref="ModUi"/>, which delegates here.
     /// </summary>
-    internal sealed class UiManager : IAslUi
+    internal sealed class UiManager
     {
         private readonly ManualLogSource _log;
 

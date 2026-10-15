@@ -50,6 +50,12 @@ namespace ASL
         /// <summary>Networking awareness. Surfaced to mods through <c>IModContext.Net</c>.</summary>
         internal static NetState Net { get; private set; }
 
+        /// <summary>Registry of every mod found (info, services, cross-mod messages). Surfaced via <c>IModContext.Mods</c>.</summary>
+        internal static ModRegistry Registry { get; private set; }
+
+        /// <summary>Shared dev-console command registry. Surfaced via <c>IModContext.Commands</c>.</summary>
+        internal static CommandRegistry CommandHub { get; private set; }
+
         private ModLoader _loader;
 
         public override void Load()
@@ -61,6 +67,9 @@ namespace ASL
             Hooks = new HookManager(Harmony, Logger);
             Content = new ContentRegistry(Logger, Bus);
             Menu = new MenuManager();
+            Menu.VisibleChanged += visible => Bus.RaiseMenuVisibilityChanged(visible);
+            Registry = new ModRegistry(Logger);
+            CommandHub = new CommandRegistry(Logger);
             Keybinds = new KeybindManager(Logger, Bus);
             MenuUi = new NativeMenu(Logger, Menu, Keybinds);
             UiApi = new UiManager(Logger);
@@ -82,6 +91,7 @@ namespace ASL
 
         public override bool Unload()
         {
+            Bus?.RaiseGameQuitting();
             _loader?.UnloadAll();
             return true;
         }
@@ -110,6 +120,6 @@ namespace ASL
     {
         public const string Guid = "com.radomir.asl";
         public const string Name = "ASL - Airport Security Lib";
-        public const string Version = "0.1.0";
+        public const string Version = "2.0.0";
     }
 }

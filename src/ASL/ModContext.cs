@@ -16,21 +16,41 @@ namespace ASL
         public IAslUi Ui { get; }
         public IAslInput Input { get; }
         public IAslNet Net { get; }
+        public IAslConfig Config { get; }
+        public IAslStorage Storage { get; }
+        public IAslTimers Timers { get; }
+        public IAslMods Mods { get; }
+        public IAslCommands Commands { get; }
+        public IAslAssets Assets { get; }
+        public IAslLocalization Loc { get; }
+        public IModInfo Info { get; }
+
+        /// <summary>The per-mod service objects this context was built from (kept for release on unload/reload).</summary>
+        internal ModServices Services { get; }
 
         public ModContext(string modId, string modName, string modDirectory,
-                          ManualLogSource logSource, IAslEvents events, IModHooks hooks, IModMenu menu,
-                          IAslUi ui, IAslInput input, IAslNet net)
+                          ManualLogSource logSource, ModServices services, IModHooks hooks, IModMenu menu,
+                          IAslInput input, IAslNet net)
         {
             ModId = modId;
             ModName = modName;
             ModDirectory = modDirectory;
             Log = new ModLogger(logSource);
-            Events = events;
+            Services = services;
+            Events = services.Events;
             Hooks = hooks;
             Menu = menu;
-            Ui = ui;
+            Ui = services.Ui;
             Input = input;
             Net = net;
+            Config = services.Config;
+            Storage = services.Storage;
+            Timers = services.Timers;
+            Mods = services.Mods;
+            Commands = services.Commands;
+            Assets = services.Assets;
+            Loc = services.Loc;
+            Info = services.Info;
         }
     }
 

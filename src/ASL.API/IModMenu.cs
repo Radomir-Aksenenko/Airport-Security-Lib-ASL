@@ -21,5 +21,18 @@ namespace ASL.Api
 
         /// <summary>A slider in [min, max]. <paramref name="onChanged"/> fires as the value moves.</summary>
         void AddSlider(string label, float min, float max, float initial, Action<float> onChanged);
+
+        /// <summary>
+        /// A row on your mod's page that opens a rich sub-page. <paramref name="build"/> is called each
+        /// time the sub-page is shown, with a container to fill using the UI toolkit.
+        /// <code>ctx.Menu.AddPage("Advanced", page => { page.AddHeader("Advanced"); page.AddToggle("Debug", false, v => debug = v); });</code>
+        /// </summary>
+        void AddPage(string title, Action<IUiContainer> build);
+
+        /// <summary>A row that opens/toggles <paramref name="window"/> (created with <c>ctx.Ui.CreateWindow</c>).</summary>
+        void AddWindowButton(string label, IUiWindow window);
+
+        /// <summary>A visual group header row. <paramref name="title"/> null = a plain divider.</summary>
+        void AddSeparator(string title = null);
     }
 }

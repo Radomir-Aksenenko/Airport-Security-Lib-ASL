@@ -24,9 +24,10 @@ namespace ASL
         private readonly ContentRegistry _content;
         private readonly MenuManager _menu;
         private readonly IAslNet _net;
-        private readonly IAslUi _ui;
+        private readonly UiManager _ui;
         private readonly KeybindManager _keys;
         private readonly List<LoadedMod> _loaded = new();
+        private ModInfo _current;   // registry record of the mod currently being loaded (null between mods)
 
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
@@ -35,7 +36,7 @@ namespace ASL
             AllowTrailingCommas = true,
         };
 
-        public ModLoader(ManualLogSource log, string modsRoot, IAslEvents bus, IModHooks hooks, ContentRegistry content, MenuManager menu, IAslNet net, IAslUi ui, KeybindManager keys)
+        public ModLoader(ManualLogSource log, string modsRoot, IAslEvents bus, IModHooks hooks, ContentRegistry content, MenuManager menu, IAslNet net, UiManager ui, KeybindManager keys)
         {
             _log = log;
             _modsRoot = modsRoot;
@@ -68,6 +69,23 @@ namespace ASL
             }
 
             _log.LogInfo($"Mod loading complete: {_loaded.Count} mod(s) active.");
+
+            RaiseAllModsLoaded();
+        }
+
+        // Every mod's OnLoad has run: tell each code mod (isolated per mod), then raise the events.
+        private void RaiseAllModsLoaded()
+        {
+            foreach (var m in _loaded.ToArray())
+            {
+                if (m.Instance == null) continue;
+                try { m.Instance.OnAllModsLoaded(); }
+                catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' OnAllModsLoaded threw: {ex}"); }
+            }
+            try { AslPlugin.Registry?.RaiseAllModsLoaded(); }
+            catch (Exception ex) { _log.LogError($"AllModsLoaded (Mods) raise failed: {ex.Message}"); }
+            try { (_bus as EventBus)?.RaiseAllModsLoaded(); }
+            catch (Exception ex) { _log.LogError($"AllModsLoaded raise failed: {ex.Message}"); }
         }
 
         public void UnloadAll()
@@ -92,11 +110,17 @@ namespace ASL
 
             ModManifest manifest;
             try { manifest = JsonSerializer.Deserialize<ModManifest>(File.ReadAllText(manifestPath), JsonOpts); }
-            catch (Exception ex) { _log.LogError($"Skipping '{folderName}': invalid manifest.json ({ex.Message})."); return; }
+            catch (Exception ex)
+            {
+                _log.LogError($"Skipping '{folderName}': invalid manifest.json ({ex.Message}).");
+                RegisterBroken(folderName, dir, $"invalid manifest.json ({ex.Message})");
+                return;
+            }
 
             if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id))
             {
                 _log.LogError($"Skipping '{folderName}': manifest is missing the required 'id' field.");
+                RegisterBroken(folderName, dir, "manifest is missing the required 'id' field");
                 return;
             }
 
@@ -104,13 +128,39 @@ namespace ASL
             var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
             _log.LogInfo($"Loading mod '{display}' v{manifest.Version} [{kind}] (id={manifest.Id})");
 
-            switch (kind)
+            _current = AslPlugin.Registry?.Add(ModInfo.From(manifest, KindName(kind), dir, display));
+            try
             {
-                case ModKind.Dll:     LoadDllMod(manifest, dir); break;
-                case ModKind.Script:  LoadScriptMod(manifest, dir); break;
-                case ModKind.Content: LoadContentMod(manifest, dir); break;
-                default:              _log.LogWarning($"  '{manifest.Id}': could not determine mod kind - nothing to load."); break;
+                switch (kind)
+                {
+                    case ModKind.Dll:     LoadDllMod(manifest, dir); break;
+                    case ModKind.Script:  LoadScriptMod(manifest, dir); break;
+                    case ModKind.Content: LoadContentMod(manifest, dir); break;
+                    default:              Fail(manifest, "could not determine mod kind - nothing to load.", LogLevel.Warning); break;
+                }
             }
+            catch (Exception ex)
+            {
+                if (_current != null) { _current.State = ModState.Failed; _current.Error = ex.Message; }
+                throw;   // DiscoverAndLoad logs it, exactly as before
+            }
+            finally { _current = null; }
+        }
+
+        private static string KindName(ModKind k) => k == ModKind.Dll ? "dll" : k == ModKind.Script ? "script" : k == ModKind.Content ? "content" : "unknown";
+
+        // A folder whose manifest is unusable still shows up in the registry (as Failed), keyed by folder name.
+        private void RegisterBroken(string folderName, string dir, string error)
+        {
+            AslPlugin.Registry?.Add(new ModInfo { Id = folderName, Name = folderName, Version = "?", Kind = "unknown", Directory = dir, State = ModState.Failed, Error = error });
+        }
+
+        // Log a load problem exactly like the old inline code did, and record it on the mod's registry entry.
+        private void Fail(ModManifest m, string message, LogLevel level = LogLevel.Error)
+        {
+            var line = $"  '{m.Id}': {message}";
+            if (level == LogLevel.Warning) _log.LogWarning(line); else _log.LogError(line);
+            if (_current != null) { _current.State = ModState.Failed; _current.Error = message; }
         }
 
         private ModKind ResolveKind(ModManifest m, string dir)
@@ -143,13 +193,13 @@ namespace ASL
             if (dllPath == null)
             {
                 var dlls = Directory.GetFiles(dir, "*.dll");
-                if (dlls.Length == 0) { _log.LogError($"  '{manifest.Id}': type=dll but no .dll file found."); return; }
+                if (dlls.Length == 0) { Fail(manifest, "type=dll but no .dll file found."); return; }
                 dllPath = dlls[0];
             }
 
             Assembly asm;
             try { asm = Assembly.LoadFrom(dllPath); }
-            catch (Exception ex) { _log.LogError($"  '{manifest.Id}': failed to load assembly {Path.GetFileName(dllPath)}: {ex.Message}"); return; }
+            catch (Exception ex) { Fail(manifest, $"failed to load assembly {Path.GetFileName(dllPath)}: {ex.Message}"); return; }
 
             InstantiateAndLoad(asm, manifest, dir);
         }
@@ -164,14 +214,14 @@ namespace ASL
             else
                 scripts = Directory.GetFiles(dir, "*.cs");
 
-            if (scripts.Length == 0) { _log.LogError($"  '{manifest.Id}': type=script but no .cs file found."); return; }
+            if (scripts.Length == 0) { Fail(manifest, "type=script but no .cs file found."); return; }
 
             var interopDir = Path.Combine(Paths.GameRootPath, "BepInEx", "interop");
             Assembly asm;
             try { asm = ScriptLoader.Compile($"ScriptMod_{Sanitize(manifest.Id)}", scripts, interopDir, _log); }
-            catch (Exception ex) { _log.LogError($"  '{manifest.Id}': script compilation crashed: {ex.Message}"); return; }
+            catch (Exception ex) { Fail(manifest, $"script compilation crashed: {ex.Message}"); return; }
 
-            if (asm == null) { _log.LogError($"  '{manifest.Id}': script did not compile (see errors above)."); return; }
+            if (asm == null) { Fail(manifest, "script did not compile (see errors above)."); return; }
             InstantiateAndLoad(asm, manifest, dir);
         }
 
@@ -181,7 +231,7 @@ namespace ASL
         {
             if (manifest.Content == null)
             {
-                _log.LogWarning($"  '{manifest.Id}': type=content but no 'content' section in manifest.");
+                Fail(manifest, "type=content but no 'content' section in manifest.", LogLevel.Warning);
                 return;
             }
 
@@ -205,6 +255,7 @@ namespace ASL
             }
 
             _loaded.Add(new LoadedMod(manifest, null, null));
+            MarkLoaded();
             _log.LogInfo($"  '{manifest.Id}': content mod loaded ({queued} texture swap(s) queued; applied on scene load).");
         }
 
@@ -217,26 +268,40 @@ namespace ASL
             {
                 if (t != null && !t.IsAbstract && typeof(AslMod).IsAssignableFrom(t)) { modType = t; break; }
             }
-            if (modType == null) { _log.LogError($"  '{manifest.Id}': no public AslMod subclass found."); return; }
+            if (modType == null) { Fail(manifest, "no public AslMod subclass found."); return; }
 
             AslMod instance;
             try { instance = (AslMod)Activator.CreateInstance(modType); }
-            catch (Exception ex) { _log.LogError($"  '{manifest.Id}': failed to instantiate {modType.Name}: {ex.Message}"); return; }
+            catch (Exception ex) { Fail(manifest, $"failed to instantiate {modType.Name}: {ex.Message}"); return; }
 
             var display = string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Id : manifest.Name;
             var modLog = BepInEx.Logging.Logger.CreateLogSource(display);
             var section = _menu.EnsureSection(display);              // one section shared by Menu + Input
             var menu = new ModMenu(section);
             var input = new ModInput(manifest.Id, display, section, _keys, modLog);
-            var ctx = new ModContext(manifest.Id, display, dir, modLog, _bus, _hooks, menu, _ui, input, _net);
+            var info = _current ?? ModInfo.From(manifest, "dll", dir, display);   // _current is only null if the registry is unavailable
+            var services = ModServices.Create(info, display, modLog, _bus, _ui);
+            var ctx = new ModContext(manifest.Id, display, dir, modLog, services, _hooks, menu, input, _net);
 
             try
             {
                 instance.OnLoad(ctx);
                 _loaded.Add(new LoadedMod(manifest, instance, ctx));
+                MarkLoaded();
                 _log.LogInfo($"  '{manifest.Id}': loaded OK.");
             }
-            catch (Exception ex) { _log.LogError($"  '{manifest.Id}': OnLoad threw: {ex}"); }
+            catch (Exception ex)
+            {
+                _log.LogError($"  '{manifest.Id}': OnLoad threw: {ex}");
+                if (_current != null) { _current.State = ModState.Failed; _current.Error = "OnLoad threw: " + ex.Message; }
+            }
+        }
+
+        private void MarkLoaded()
+        {
+            if (_current == null) return;
+            _current.State = ModState.Loaded;
+            _current.Error = null;
         }
 
         private static string Sanitize(string s)

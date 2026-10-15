@@ -23,10 +23,12 @@ namespace ASL
         private static ManualLogSource _log;
         private static GameObject _modsButton;   // the live "Mods" button, for re-localizing
         private static string _lastLang;
+        private static EventBus _bus;   // raises IAslEvents.LanguageChanged
 
         public static void Init(ManualLogSource log, IAslEvents events)
         {
             _log = log;
+            _bus = events as EventBus;
         }
 
         // Self-healing: called on the throttled poll. The main menu can be rebuilt without a scene-name
@@ -123,8 +125,10 @@ namespace ASL
             {
                 var cur = Loc.CurrentLanguage();
                 if (cur == _lastLang) return;
+                bool first = _lastLang == null;
                 _lastLang = cur;
                 if (_modsButton != null) UiUtil.SetLabel(_modsButton, Loc.Mods());
+                if (!first) _bus?.RaiseLanguageChanged(cur);   // not for the initial detection
             }
             catch { }
         }

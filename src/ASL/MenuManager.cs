@@ -60,6 +60,10 @@ namespace ASL
     internal sealed class ToggleControl : MenuControl { public bool Value; public Action<bool> OnChanged; }
     internal sealed class SliderControl : MenuControl { public float Min, Max, Value; public Action<float> OnChanged; }
     internal sealed class KeybindControl : MenuControl { public AslKeybind Bind; }
+    /// <summary>A row that opens a rich sub-page built with the UI toolkit (<c>IModMenu.AddPage</c>).</summary>
+    internal sealed class PageControl : MenuControl { public Action<IUiContainer> Build; }
+    /// <summary>A row that opens/toggles a toolkit window (<c>IModMenu.AddWindowButton</c>).</summary>
+    internal sealed class WindowButtonControl : MenuControl { public IUiWindow Window; }
 
     /// <summary>Per-mod <see cref="IModMenu"/> that appends to one section.</summary>
     internal sealed class ModMenu : IModMenu
@@ -71,5 +75,10 @@ namespace ASL
         public void AddButton(string label, Action onClick) => _sec.Controls.Add(new ButtonControl { Label = label, OnClick = onClick });
         public void AddToggle(string label, bool initial, Action<bool> onChanged) => _sec.Controls.Add(new ToggleControl { Label = label, Value = initial, OnChanged = onChanged });
         public void AddSlider(string label, float min, float max, float initial, Action<float> onChanged) => _sec.Controls.Add(new SliderControl { Label = label, Min = min, Max = max, Value = initial, OnChanged = onChanged });
+
+        public void AddPage(string title, Action<IUiContainer> build) => _sec.Controls.Add(new PageControl { Label = title, Build = build });
+        public void AddWindowButton(string label, IUiWindow window) => _sec.Controls.Add(new WindowButtonControl { Label = label, Window = window });
+        // Renders as a (non-interactive) label row until the UI agent gives separators their own look.
+        public void AddSeparator(string title = null) => _sec.Controls.Add(new LabelControl { Label = string.IsNullOrEmpty(title) ? "--------" : title });
     }
 }

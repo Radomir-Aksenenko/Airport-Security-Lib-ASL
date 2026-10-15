@@ -16,6 +16,12 @@ namespace ASL.Api
         /// <param name="ctx">Per-mod services provided by ASL.</param>
         public abstract void OnLoad(IModContext ctx);
 
+        /// <summary>
+        /// Called once after <b>every</b> mod's <see cref="OnLoad"/> has run. Use it to look up services
+        /// other mods published (<c>ctx.Mods.GetService&lt;T&gt;()</c>) without worrying about load order. Optional.
+        /// </summary>
+        public virtual void OnAllModsLoaded() { }
+
         /// <summary>Called when the mod is unloaded (e.g. on game shutdown). Optional.</summary>
         public virtual void OnUnload() { }
     }
