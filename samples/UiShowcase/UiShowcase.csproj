@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    UI toolkit showcase (DLL mod). Same pattern as HelloMod: reference ASL.API (Private=false: ASL supplies it
+    at runtime) plus the Unity modules whose types appear in our code (KeyCode, Sprite, Color, Time), build,
+    and the output lands in <GamePath>\mods\UiShowcase\ together with manifest.json and lang\*.json.
+  -->
+  <PropertyGroup>
+    <AssemblyName>UiShowcase</AssemblyName>
+    <RootNamespace>UiShowcase</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ASL.API\ASL.API.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Deploy the built mod (dll + manifest + translations) into the game's mods/ folder for testing.
+       Skipped with /p:DeployToGame=false (e.g. to compile-check while the game is running). -->
+  <Target Name="DeployUiShowcase" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+    <PropertyGroup>
+      <ModOut>$(GamePath)\mods\UiShowcase</ModOut>
+    </PropertyGroup>
+    <ItemGroup>
+      <LangFiles Include="$(MSBuildProjectDirectory)\lang\*.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(ModOut);$(ModOut)\lang" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="@(LangFiles)" DestinationFolder="$(ModOut)\lang" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="UiShowcase sample deployed -> $(ModOut)" />
+  </Target>
+
+</Project>

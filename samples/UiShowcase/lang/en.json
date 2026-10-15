@@ -1,0 +1,9 @@
+{
+  "window.title": "UI Showcase",
+  "window.opened": "Opened {0} time(s) so far.",
+  "hud.line": "{0:0} FPS  |  {1}",
+  "menu.open": "Open showcase",
+  "menu.page": "Quick page",
+  "dialog.question": "Do you like this toolkit?",
+  "dialog.thanks": "Glad to hear it!"
+}

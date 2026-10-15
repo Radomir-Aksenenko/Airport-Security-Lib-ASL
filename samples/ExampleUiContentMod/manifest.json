@@ -1,0 +1,12 @@
+{
+  "id": "com.asl.exampleuicontent",
+  "name": "Example UI Content Mod",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "A no-code mod: a window declared in ui/panel.json (buttons, progress bar, built-in actions). Press F9.",
+  "type": "content",
+  "minAslVersion": "2.0.0",
+  "tags": [ "sample", "ui" ],
+  "content": {},
+  "ui": [ "ui/panel.json" ]
+}

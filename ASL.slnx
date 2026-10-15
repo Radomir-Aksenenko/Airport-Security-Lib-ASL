@@ -4,6 +4,7 @@
          of the solution so the default build deploys only PropHunt. Build them on demand with
          `dotnet build samples/HelloMod/HelloMod.csproj`. -->
     <Project Path="samples/PropHunt/PropHunt.csproj" />
+    <Project Path="samples/UiShowcase/UiShowcase.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ASL.API/ASL.API.csproj" />

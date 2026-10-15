@@ -40,6 +40,34 @@ namespace ASL.Tests
         }
 
         [Fact]
+        public void Every_sample_and_template_layout_parses_without_warnings()
+        {
+            var root = new DirectoryInfo(AppContext.BaseDirectory);
+            while (root != null && !Directory.Exists(Path.Combine(root.FullName, "samples"))) root = root.Parent;
+            Assert.NotNull(root);
+
+            var files = new System.Collections.Generic.List<string>();
+            foreach (var top in new[] { "samples", "templates" })
+            {
+                var dir = Path.Combine(root.FullName, top);
+                if (!Directory.Exists(dir)) continue;
+                foreach (var f in Directory.GetFiles(dir, "*.json", SearchOption.AllDirectories))
+                {
+                    var parent = Path.GetFileName(Path.GetDirectoryName(f));
+                    if (string.Equals(parent, "ui", StringComparison.OrdinalIgnoreCase)) files.Add(f);
+                }
+            }
+            Assert.NotEmpty(files);
+
+            foreach (var f in files)
+            {
+                var r = LayoutParser.Parse(File.ReadAllText(f));
+                Assert.True(r.Ok, f + ": " + r.Error);
+                Assert.True(r.Warnings.Count == 0, f + ": " + string.Join("; ", r.Warnings));
+            }
+        }
+
+        [Fact]
         public void Parses_every_node_type()
         {
             const string json = @"{

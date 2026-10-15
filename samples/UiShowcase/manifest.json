@@ -1,0 +1,11 @@
+{
+  "id": "com.asl.uishowcase",
+  "name": "UI Showcase",
+  "version": "1.0.0",
+  "author": "ASL",
+  "description": "Learning sample for the ASL 2.0 UI toolkit: every button shape/size/variant, inputs, layouts, dialogs, themes, a HUD, config, storage, commands, menu pages and localization.",
+  "type": "dll",
+  "entry": "UiShowcase.dll",
+  "minAslVersion": "2.0.0",
+  "tags": [ "sample", "ui" ]
+}

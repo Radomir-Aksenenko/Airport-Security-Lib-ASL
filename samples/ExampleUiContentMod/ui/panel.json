@@ -1,0 +1,56 @@
+{
+  // A window declared entirely in JSON. Comments and trailing commas are allowed.
+  "id": "panel",
+  "title": "Example UI Content Mod",
+  "width": 640,
+  "anchor": "Center",
+  "theme": "Dark",
+  "toggleKey": "F9",
+  "children": [
+    { "type": "header", "text": "No-code UI" },
+    { "type": "label", "text": "This window lives in ui/panel.json. Press F9 to toggle it.", "style": "Muted" },
+    { "type": "label", "text": "Every button below uses only built-in actions: toast, announce, command and close." },
+
+    { "type": "separator" },
+
+    { "type": "label", "text": "Shapes", "style": "Small" },
+    {
+      "type": "row",
+      "children": [
+        { "type": "button", "text": "Rect", "shape": "Rect", "size": "Small", "onClick": "toast:Rect, Small" },
+        { "type": "button", "text": "Rounded", "shape": "Rounded", "size": "Medium", "onClick": "toast:Rounded, Medium" },
+        { "type": "button", "text": "Pill", "shape": "Pill", "size": "Large", "variant": "Success", "onClick": "toast:Pill, Large" },
+        { "type": "button", "text": "Go", "shape": "Circle", "size": "Large", "variant": "Warning", "onClick": "announce:Circle button pressed" },
+      ]
+    },
+
+    { "type": "label", "text": "Variants", "style": "Small" },
+    {
+      "type": "row",
+      "children": [
+        { "type": "button", "text": "Primary", "variant": "Primary", "onClick": "toast:Primary" },
+        { "type": "button", "text": "Danger", "variant": "Danger", "onClick": "toast:Danger" },
+        { "type": "button", "text": "Ghost", "variant": "Ghost", "onClick": "toast:Ghost" },
+        { "type": "button", "text": "Outline", "variant": "Outline", "onClick": "toast:Outline" },
+      ]
+    },
+
+    { "type": "label", "text": "Console commands", "style": "Small" },
+    {
+      "type": "row",
+      "children": [
+        { "type": "button", "text": "help", "variant": "Secondary", "onClick": "command:help" },
+        { "type": "button", "text": "mods", "variant": "Secondary", "onClick": "command:mods" },
+        { "type": "button", "text": "Announce", "variant": "Primary", "onClick": "announce:Hello from a no-code mod!" },
+      ]
+    },
+
+    { "type": "separator" },
+
+    { "type": "label", "text": "Progress", "style": "Small" },
+    { "type": "progress", "value": 0.6, "text": "60%" },
+
+    { "type": "spacer" },
+    { "type": "button", "text": "Close", "variant": "Danger", "shape": "Pill", "onClick": "close" },
+  ]
+}
