@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using ASL.Api;
+using ASL.Core;
 using BepInEx.Logging;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
@@ -20,12 +22,25 @@ namespace ASL
     /// and <c>RawImage.texture</c>.</item>
     /// </list>
     /// Re-applied on each scene change as textures/materials/UI stream in.
+    /// <para>
+    /// v2 content (audio swaps, string overrides, <c>listAudioNames</c>) lives in <see cref="AudioSwaps"/> /
+    /// <see cref="StringOverrides"/>: run on scene change, then on a 2 s poll for 10 s (never per frame —
+    /// the per-frame <c>Update</c> handler is two bool checks outside that window).
+    /// </para>
     /// </summary>
     internal sealed class ContentRegistry
     {
         private readonly ManualLogSource _log;
         private readonly List<TextureSwap> _swaps = new();
         private bool _dumpNames;
+
+        // ---- v2: audio / strings ----
+        private const float PollInterval = 2f, PollWindow = 10f;
+        private readonly AudioSwaps _audio;
+        private readonly StringOverrides _strings;
+        private bool _pendingStart;      // open a poll window on the next Update (avoids Unity calls at registration)
+        private bool _polling;
+        private float _nextPoll, _pollEnd;
 
         private sealed class TextureSwap
         {
@@ -42,7 +57,82 @@ namespace ASL
         public ContentRegistry(ManualLogSource log, IAslEvents events)
         {
             _log = log;
-            events.SceneChanged += _ => Apply();
+            _audio = new AudioSwaps(log);
+            _strings = new StringOverrides(log);
+            events.SceneChanged += _ => { Apply(); OnSceneChangedV2(); };
+            events.Update += PollTick;
+        }
+
+        /// <summary>
+        /// Register the v2 parts of a content mod's manifest (<c>audio</c>, <c>strings</c>, <c>listAudioNames</c>).
+        /// Textures are registered separately (unchanged). Never throws; problems are logged and skipped.
+        /// </summary>
+        public void RegisterContentV2(ModManifest manifest, string dir)
+        {
+            var c = manifest?.Content;
+            if (c == null) return;
+            var id = manifest.Id;
+            try
+            {
+                if (c.ListAudioNames) _audio.RequestNameDump();
+
+                if (c.Audio != null)
+                {
+                    foreach (var ar in c.Audio)
+                    {
+                        if (ar == null || string.IsNullOrWhiteSpace(ar.Target) || string.IsNullOrWhiteSpace(ar.File)) continue;
+                        try
+                        {
+                            var path = StorageNames.SafeJoin(dir, ar.File);
+                            if (!File.Exists(path)) { _log.LogError($"  '{id}': audio file not found: {ar.File}"); continue; }
+                            var wav = WavDecoder.Decode(File.ReadAllBytes(path));
+                            _audio.Register(id, ar.Target, Path.GetFileNameWithoutExtension(path), wav);
+                        }
+                        catch (Exception ex) { _log.LogError($"  '{id}': audio '{ar.File}' skipped: {ex.Message}"); }
+                    }
+                }
+
+                if (c.Strings != null && c.Strings.Count > 0) _strings.Register(id, c.Strings);
+
+                if (_audio.HasWork || _strings.HasWork) _pendingStart = true;
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"  '{id}': content v2 registration failed: {ex.Message}");
+            }
+        }
+
+        // Scene loaded: one immediate v2 pass, then (via PollTick) every 2 s for 10 s while streamed-in objects appear.
+        private void OnSceneChangedV2()
+        {
+            if (!(_audio.HasWork || _strings.HasWork)) return;
+            ApplyV2();
+            _pendingStart = true;
+        }
+
+        // IAslEvents.Update: runs every frame, so outside a poll window this is two bool reads.
+        private void PollTick()
+        {
+            if (!_pendingStart && !_polling) return;
+            float now = Time.realtimeSinceStartup;
+            if (_pendingStart)
+            {
+                _pendingStart = false;
+                _polling = true;
+                _pollEnd = now + PollWindow;
+                _nextPoll = now + PollInterval;
+                return;
+            }
+            if (now >= _pollEnd) { _polling = false; return; }
+            if (now < _nextPoll) return;
+            _nextPoll = now + PollInterval;
+            ApplyV2();
+        }
+
+        private void ApplyV2()
+        {
+            _audio.Apply();
+            _strings.Apply();
         }
 
         public void RegisterTextureSwap(string modId, string target, byte[] png)

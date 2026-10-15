@@ -43,7 +43,7 @@ namespace ASL
                 Mods = new ModMods(AslPlugin.Registry, id),
                 Commands = new ModCommands(AslPlugin.CommandHub, id),
                 Assets = new ModAssets(id, dir, modLog),
-                Loc = new ModLocalization(id, dir, modLog),
+                Loc = new ModLocalization(id, dir, modLog, sharedBus),
                 Info = info,
             };
         }

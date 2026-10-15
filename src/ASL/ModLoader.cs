@@ -254,6 +254,8 @@ namespace ASL
                 }
             }
 
+            _content.RegisterContentV2(manifest, dir);   // audio / strings / listAudioNames (no-ops when absent)
+
             _loaded.Add(new LoadedMod(manifest, null, null));
             MarkLoaded();
             _log.LogInfo($"  '{manifest.Id}': content mod loaded ({queued} texture swap(s) queued; applied on scene load).");
