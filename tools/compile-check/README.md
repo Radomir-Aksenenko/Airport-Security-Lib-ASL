@@ -15,9 +15,19 @@ The projects normally reference `$(GamePath)\BepInEx\core\*.dll` (BepInEx) and
 `dotnet build -p:GamePath=out/game -p:DeployToGame=false` on `ASL.slnx`, on every `samples/*` project that
 is not in the solution (HelloMod, FunPanel), and on every `samples/*` mod whose manifest has
 `"type": "script"` (a throwaway csproj in `out/script/`, mirroring `ModLoader`/`ScriptLoader`: the manifest
-`entry` file, else all top-level `*.cs`; references = ASL.API + every interop assembly). A last step compiles
-`smoke/UiSurface.cs`, a self-test of the Unity/uGUI/TMP surface the stubs promise (so UI code can be
-written against them).
+`entry` file, else all top-level `*.cs`; references = ASL.API + every interop assembly).
+
+**Templates** (`templates/content/*`): every template folder that ships C# is compile-checked the same way
+(a throwaway csproj in `out/template/<name>/` with all its top-level `*.cs`, references = ASL.API + every
+interop assembly). Today that is `asl-dll` and `asl-script`; `asl-content` and `asl-ui` have no code and are
+skipped. The template's own `MyMod.csproj` is **not** built (it points at a real game path). Result lines:
+`OK    template:asl-dll`, `OK    template:asl-script`. Every `templates/content/*/manifest.json`,
+`.template.config/template.json` and `ui/*.json` is also parsed as JSON (`python3`): `OK    template-json:<name> (N file(s))`
+or `FAIL  template-json:<name>` with the parse error. Templates must only use members that exist in
+`src/ASL.API`, so a template compile failure means the template (or the API it uses) needs fixing.
+
+Then a self-test compiles `smoke/UiSurface.cs`, a self-test of the Unity/uGUI/TMP surface the stubs promise
+(so UI code can be written against them).
 
 After that it runs:
 
