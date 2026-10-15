@@ -19,6 +19,21 @@ is not in the solution (HelloMod, FunPanel), and on every `samples/*` mod whose 
 `smoke/UiSurface.cs`, a self-test of the Unity/uGUI/TMP surface the stubs promise (so UI code can be
 written against them).
 
+After that it runs:
+
+- **Unit tests**: `dotnet test` on every `tests/*/*.csproj` (currently `ASL.Tests`, `ASL.Data.Tests`); one
+  `tests:<name>` summary line each.
+- **API compatibility** (`api-compat`): `ASL.API` is the stable contract mods compile against. The script
+  extracts `src/ASL.API` from the baseline git ref (`git archive`), builds it against the same stub game dir,
+  builds the current `ASL.API`, and compares them with Microsoft's ApiCompat tool
+  (`Microsoft.DotNet.ApiCompat.Tool`, installed once into `.cache/tools`; v9 to match the SDK 9 runtime). Result line:
+  `OK    api-compat (ASL.API main -> current: no breaking changes)`,
+  `FAIL  api-compat (N breaking change(s))` (offending members are printed; log in `out/logs/api-compat.log`), or
+  `SKIP  api-compat (baseline ref ... not found)`. The baseline ref is `$ASL_API_BASELINE` (default `main`, falling
+  back to `origin/<ref>`), so CI needs `fetch-depth: 0`. `CP0006` (adding a member to an interface) is ignored by
+  default because ASL implements the `IAsl*`/`IMod*` interfaces and mods only consume them; override with
+  `ASL_API_NOWARN` (e.g. `ASL_API_NOWARN=CP0006,CP0008`). Removing or changing a public member fails.
+
 ## Important: this is an approximation
 
 **Passing does NOT guarantee that the real build or the game behaves.** The stubs were written from
@@ -34,6 +49,7 @@ inferred from usage.
 ```bash
 tools/compile-check/build.sh            # needs .NET SDK 9+ (dotnet on PATH, or $HOME/.dotnet/dotnet), curl, unzip
 tools/compile-check/build.sh --clean    # wipe out/ first (the BepInEx download in .cache/ is kept)
+ASL_API_BASELINE=v1.0 tools/compile-check/build.sh   # compare ASL.API against another ref/tag/commit
 ```
 
 Exit code is non-zero if anything fails to compile; per-target logs are in `out/logs/`. The first run

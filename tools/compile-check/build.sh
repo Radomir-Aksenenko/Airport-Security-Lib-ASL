@@ -155,17 +155,83 @@ CSPROJ
   build "smoke:stub-surface" "$wd/smoke.csproj"
 fi
 
-# Unit tests (pure logic under src/ASL/Core; tests/ASL.Tests is deliberately NOT in ASL.slnx).
-if [ -f "$REPO/tests/ASL.Tests/ASL.Tests.csproj" ]; then
-  tlog="$LOGS/tests_ASL.Tests.log"
-  say "tests: tests/ASL.Tests"
-  if "$DOTNET" test "$REPO/tests/ASL.Tests/ASL.Tests.csproj" -c Release -v:minimal -p:GamePath="$GAME" -p:DeployToGame=false >"$tlog" 2>&1; then
-    SUMMARY+=("OK    tests:ASL.Tests  ($(grep -E 'Passed!|Passed:' "$tlog" | tail -1 | sed -E 's/^[[:space:]]+//'))")
+# Unit tests: every tests/*/*.csproj (pure logic under src/; tests/* are deliberately NOT in ASL.slnx).
+for tproj in "$REPO"/tests/*/*.csproj; do
+  [ -f "$tproj" ] || continue
+  tname="$(basename "$(dirname "$tproj")")"
+  tlog="$LOGS/tests_$tname.log"
+  say "tests: tests/$tname"
+  if "$DOTNET" test "$tproj" -c Release -v:minimal -p:GamePath="$GAME" -p:DeployToGame=false >"$tlog" 2>&1; then
+    SUMMARY+=("OK    tests:$tname  ($(grep -E 'Passed!|Passed:' "$tlog" | tail -1 | sed -E 's/^[[:space:]]+//'))")
   else
-    FAILED+=("tests:ASL.Tests")
-    SUMMARY+=("FAIL  tests:ASL.Tests")
+    FAILED+=("tests:$tname")
+    SUMMARY+=("FAIL  tests:$tname")
     grep -E ' error |\[FAIL\]|Failed!|Assert\.' "$tlog" | sort -u | head -60
     echo "(full log: $tlog)"
+  fi
+done
+
+# API compatibility: ASL.API is the stable contract for mods. Build ASL.API as it is on the baseline git ref
+# (env ASL_API_BASELINE, default "main"; falls back to "origin/<ref>" as in a CI checkout) against the same stub
+# game dir and diff it against the current ASL.API.dll with Microsoft's ApiCompat. Any breaking change fails.
+# CP0006 ("cannot add interface member") is ignored by default (env ASL_API_NOWARN, comma/semicolon list of
+# rule ids): the IAsl*/IMod* interfaces are implemented by ASL and only consumed by mods, so adding members is
+# additive for modders. Removing/changing members (CP0002, CP0005, CP0008, ...) still fails.
+BASE_REF="${ASL_API_BASELINE:-main}"
+BASE_LABEL="ASL.API $BASE_REF -> current"
+say "api-compat: $BASE_LABEL"
+base_commit=""
+for cand in "$BASE_REF" "origin/$BASE_REF"; do
+  if base_commit="$(git -C "$REPO" rev-parse --verify --quiet "$cand^{commit}")" && [ -n "$base_commit" ]; then break; fi
+  base_commit=""
+done
+if [ -z "$base_commit" ]; then
+  SUMMARY+=("SKIP  api-compat (baseline ref '$BASE_REF' not found; in CI use fetch-depth: 0)")
+else
+  alog="$LOGS/api-compat.log"; : >"$alog"
+  bdir="$OUT/baseline"; rm -rf "$bdir" "$OUT/api-current"; mkdir -p "$bdir"
+  apicompat_ok=1
+  # Install the tool once into .cache (v9 matches the SDK 9 runtime; the v10 tool needs a .NET 10 runtime).
+  APICOMPAT="$CACHE/tools/apicompat"
+  if [ ! -x "$APICOMPAT" ]; then
+    "$DOTNET" tool install Microsoft.DotNet.ApiCompat.Tool --version "${APICOMPAT_VERSION:-9.0.304}" --tool-path "$CACHE/tools" >>"$alog" 2>&1 \
+      || apicompat_ok=0
+  fi
+  if [ $apicompat_ok = 1 ] \
+     && git -C "$REPO" archive "$base_commit" src/ASL.API Directory.Build.props | tar -x -C "$bdir" \
+     && "$DOTNET" build "$bdir/src/ASL.API/ASL.API.csproj" -c Release -v:minimal -p:GamePath="$GAME" -p:DeployToGame=false \
+          -o "$bdir/bin" >>"$alog" 2>&1 \
+     && "$DOTNET" build "$REPO/src/ASL.API/ASL.API.csproj" -c Release -v:minimal -p:GamePath="$GAME" -p:DeployToGame=false \
+          -o "$OUT/api-current" >>"$alog" 2>&1; then
+    # Reference assemblies for the framework (System.Runtime etc.): the net6.0 targeting pack restored by the build.
+    fwref=""
+    for d in "${NUGET_PACKAGES:-$HOME/.nuget/packages}"/microsoft.netcore.app.ref/6.*/ref/net6.0 \
+             "$(dirname "$(readlink -f "$DOTNET")")"/packs/Microsoft.NETCore.App.Ref/*/ref/net*; do
+      [ -d "$d" ] && fwref="$d"
+    done
+    refs="$CORE,$INTEROP${fwref:+,$fwref}"
+    echo "== apicompat (baseline ${base_commit:0:9}) ==" >>"$alog"
+    DOTNET_ROOT="$(dirname "$(readlink -f "$DOTNET")")" "$APICOMPAT" \
+      -l "$bdir/bin/ASL.API.dll" -r "$OUT/api-current/ASL.API.dll" \
+      --noWarn "${ASL_API_NOWARN:-CP0006}" \
+      --lref "$refs" --rref "$refs" >>"$alog" 2>&1
+    rc=$?
+    n=$(grep -cE '(^|[[:space:]])CP[0-9]{4}:' "$alog" || true)
+    if [ "$rc" -eq 0 ] && [ "$n" -eq 0 ]; then
+      SUMMARY+=("OK    api-compat ($BASE_LABEL: no breaking changes)")
+    else
+      [ "$n" -eq 0 ] && n="?"   # non-zero exit without a parsable rule id: still a failure
+      FAILED+=("api-compat")
+      SUMMARY+=("FAIL  api-compat ($n breaking change(s))")
+      grep -E 'CP[0-9]{4}:' "$alog" | sort -u | head -60
+      [ "$n" = "?" ] && tail -20 "$alog"
+      echo "(full log: $alog)"
+    fi
+  else
+    FAILED+=("api-compat")
+    SUMMARY+=("FAIL  api-compat (could not install ApiCompat or build the baseline/current ASL.API)")
+    grep -E ' error |rror:' "$alog" | sort -u | head -30
+    echo "(full log: $alog)"
   fi
 fi
 

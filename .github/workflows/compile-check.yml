@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # api-compat diffs ASL.API against the baseline ref (main); needs its history
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -22,7 +24,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tools/compile-check/.cache
-          key: compile-check-bepinex-be788-v1
+          key: compile-check-bepinex-be788-apicompat-v2
 
       - name: Compile-check
         run: bash tools/compile-check/build.sh
