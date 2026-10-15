@@ -1,0 +1,14 @@
+{
+  "id": "com.yourname.mymod",
+  "name": "MyMod",
+  "version": "1.0.0",
+  "author": "yourname",
+  "description": "A no-code content mod that swaps a game texture for a PNG.",
+  "type": "content",
+  "content": {
+    "listTextureNames": true,
+    "textures": [
+      { "target": "star_gray", "file": "my-texture.png" }
+    ]
+  }
+}

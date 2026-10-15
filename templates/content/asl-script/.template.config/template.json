@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "ASL",
+  "classifications": [ "Game", "Mod", "ASL" ],
+  "identity": "ASL.Templates.Script",
+  "name": "ASL script mod",
+  "description": "No-build ASL 2.0 script mod: a Main.cs compiled at runtime, with a window, a button and a toast.",
+  "shortName": "asl-script",
+  "sourceName": "MyMod",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "symbols": {
+    "author": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "yourname",
+      "replaces": "yourname",
+      "description": "Author name written to manifest.json and used as the middle part of the mod id."
+    },
+    "lowerAuthor": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": {
+        "source": "author",
+        "toLower": true
+      }
+    },
+    "lowerName": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": {
+        "source": "name",
+        "toLower": true
+      }
+    },
+    "modId": {
+      "type": "generated",
+      "generator": "join",
+      "replaces": "com.yourname.mymod",
+      "parameters": {
+        "symbols": [
+          { "type": "const", "value": "com." },
+          { "type": "ref", "value": "lowerAuthor" },
+          { "type": "const", "value": "." },
+          { "type": "ref", "value": "lowerName" }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "id": "main",
+  "title": "MyMod",
+  "width": 600,
+  "anchor": "Center",
+  "theme": "Dark",
+  "toggleKey": "F6",
+  "children": [
+    { "type": "header", "text": "Hello from a JSON layout" },
+    { "type": "label", "text": "No code: this window is declared in ui/main.json. Press F6 to toggle it.", "style": "Muted" },
+    {
+      "type": "row",
+      "children": [
+        { "type": "button", "text": "OK", "variant": "Success", "shape": "Pill", "size": "Large", "onClick": "toast:Hi!" },
+        { "type": "button", "text": "Announce", "onClick": "announce:Hello from MyMod" },
+        { "type": "button", "text": "Help", "onClick": "command:help" },
+        { "type": "button", "text": "Close", "onClick": "close" }
+      ]
+    },
+    { "type": "separator" },
+    { "type": "progress", "value": 0.3 }
+  ]
+}

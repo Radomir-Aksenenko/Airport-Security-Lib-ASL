@@ -1,0 +1,10 @@
+{
+  "id": "com.yourname.mymod",
+  "name": "MyMod",
+  "version": "1.0.0",
+  "author": "yourname",
+  "description": "A no-code mod with a window declared in ui/main.json.",
+  "type": "content",
+  "content": {},
+  "ui": [ "ui/main.json" ]
+}

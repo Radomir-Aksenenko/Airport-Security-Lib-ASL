@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "ASL",
+  "classifications": [ "Game", "Mod", "ASL" ],
+  "identity": "ASL.Templates.Ui",
+  "name": "ASL declarative UI mod",
+  "description": "No-code ASL mod with a window declared in ui/main.json (opens with F6). Uses built-in actions only.",
+  "shortName": "asl-ui",
+  "sourceName": "MyMod",
+  "tags": {
+    "type": "project"
+  },
+  "symbols": {
+    "author": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "yourname",
+      "replaces": "yourname",
+      "description": "Author name written to manifest.json and used as the middle part of the mod id."
+    },
+    "lowerAuthor": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": {
+        "source": "author",
+        "toLower": true
+      }
+    },
+    "lowerName": {
+      "type": "generated",
+      "generator": "casing",
+      "parameters": {
+        "source": "name",
+        "toLower": true
+      }
+    },
+    "modId": {
+      "type": "generated",
+      "generator": "join",
+      "replaces": "com.yourname.mymod",
+      "parameters": {
+        "symbols": [
+          { "type": "const", "value": "com." },
+          { "type": "ref", "value": "lowerAuthor" },
+          { "type": "const", "value": "." },
+          { "type": "ref", "value": "lowerName" }
+        ]
+      }
+    }
+  }
+}

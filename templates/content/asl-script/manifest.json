@@ -1,0 +1,9 @@
+{
+  "id": "com.yourname.mymod",
+  "name": "MyMod",
+  "version": "1.0.0",
+  "author": "yourname",
+  "description": "A no-build script mod: a window with a button and a toast.",
+  "type": "script",
+  "entry": "Main.cs"
+}

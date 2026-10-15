@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ASL DLL mod. Builds MyMod.dll and copies it plus manifest.json into the game:
+      <GamePath>\mods\MyMod\
+
+    GamePath defaults to a Steam install. Override it per build:
+      dotnet build -c Release /p:GamePath="D:\Games\Airport Security Sucks!"
+    Build without copying into the game:
+      dotnet build -c Release /p:DeployToGame=false
+
+    ASL.API.dll and the game's interop assemblies are needed at compile time only
+    (Private=false), so they are not copied into your mod.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>MyMod</AssemblyName>
+    <RootNamespace>MyMod</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+
+    <GamePath Condition="'$(GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Airport Security Sucks!</GamePath>
+    <DeployToGame Condition="'$(DeployToGame)' == ''">true</DeployToGame>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ASL supplies these at runtime. -->
+    <Reference Include="ASL.API">
+      <HintPath>$(GamePath)\BepInEx\plugins\ASL.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GamePath)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(GamePath)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Deploy the built mod (dll + manifest) into the game's mods/ folder. -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeployToGame)' != 'false'">
+    <PropertyGroup>
+      <ModOut>$(GamePath)\mods\$(AssemblyName)</ModOut>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModOut)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.json" DestinationFolder="$(ModOut)" SkipUnchangedFiles="false" />
+    <Message Importance="high" Text="$(AssemblyName) deployed -> $(ModOut)" />
+  </Target>
+
+</Project>
