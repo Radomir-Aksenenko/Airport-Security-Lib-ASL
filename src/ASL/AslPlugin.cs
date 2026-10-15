@@ -79,6 +79,7 @@ namespace ASL
             UiApi = new UiManager(Logger);
             Net = new NetState(Logger, Harmony);
             PlayerControl.Init(Logger);
+            DevConsole.Init(Logger, Bus, CommandHub, Keybinds, UiApi);   // dev console: keybind, window, built-in commands
 
             Logger.LogInfo($"{AslInfo.Name} v{AslInfo.Version} - booting.");
 

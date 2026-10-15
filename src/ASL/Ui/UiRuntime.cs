@@ -113,6 +113,12 @@ namespace ASL
 
         // ---- window registry -------------------------------------------------------------------
 
+        /// <summary>Open (non-HUD) windows, bottom to top; read-only view for the console <c>windows</c> command.</summary>
+        public static IReadOnlyList<UiWindow> OpenWindows => Stack;
+
+        /// <summary>Open HUD overlays; read-only view for the console <c>windows</c> command.</summary>
+        public static IReadOnlyList<UiWindow> OpenHuds => Huds;
+
         public static void WindowOpened(UiWindow w)
         {
             if (w.IsHud) { if (!Huds.Contains(w)) Huds.Add(w); }

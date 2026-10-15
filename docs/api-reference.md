@@ -408,3 +408,25 @@ strings. See [networking.md](networking.md) for details and the send caveat.
 `ASL.AslInfo` (in `ASL.dll`) exposes the framework's `Guid` / `Name` / `Version` if you write a
 BepInEx plugin that wants to declare `[BepInDependency(AslInfo.Guid)]`. Most mods don't need this —
 they live in `mods/` and never touch BepInEx directly.
+
+## Dev console — `ctx.Commands` (🧪 not yet verified in-game)
+
+Press <kbd>`</kbd> (rebindable: F8 > ASL > Console) to open the console. Register your own commands:
+
+```csharp
+ctx.Commands.Register("give", "give <item> [count]", args => Give(args[0], args.Length > 1 ? int.Parse(args[1]) : 1));
+ctx.Commands.Register("where", "print position", args => "You are at " + player.position);   // returned text is printed
+```
+
+- Lines can hold several commands separated by `;`. Arguments split on spaces; `"double"` or `'single'` quotes keep
+  spaces; inside quotes `\"`, `\\`, `\n` work. Unknown commands print `Unknown command 'x'. Type help.`
+- Names are global and case-insensitive. Your command is always reachable as `<shortId>.<name>` (shortId = last
+  segment of your mod id, lower-cased); the bare name is yours only if nobody had it first (a warning is logged
+  otherwise). A handler that throws prints a red error line and is logged; the rest of the line keeps running.
+- Your commands are removed when your mod unloads or hot-reloads. `ctx.Commands.Print(text)` writes to the console
+  (TextMeshPro rich text such as `<color=#ff6b6b>` works); `Execute(line)` returns false if any command failed.
+- Built-ins: `help [cmd]`, `clear`, `echo`, `asl`, `mods`, `mod <id>`, `reload <id>`, `enable|disable <id>`, `scene`,
+  `fps`, `perf`, `players`, `net`, `config <modId> [section.key [value]]`, `toast`, `announce`, `ui.demo`,
+  `windows`, `timescale [v]` (only affects this machine in multiplayer), `log.mirror on|off`, `history`.
+- Tab completes command names, Up/Down browse history (last 50), Enter submits, Esc closes. The output keeps the
+  last 500 lines.
