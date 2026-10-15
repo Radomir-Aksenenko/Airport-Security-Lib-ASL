@@ -26,9 +26,10 @@ namespace ASL
             Id = id; DisplayName = displayName; ModName = modName; DefaultKey = defaultKey; Key = current;
         }
 
-        public bool WasPressed  => Key != KeyCode.None && Safe(() => Input.GetKeyDown(Key));
-        public bool IsHeld      => Key != KeyCode.None && Safe(() => Input.GetKey(Key));
-        public bool WasReleased => Key != KeyCode.None && Safe(() => Input.GetKeyUp(Key));
+        // Keybinds never fire while the player is typing in an ASL text field.
+        public bool WasPressed  => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKeyDown(Key));
+        public bool IsHeld      => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKey(Key));
+        public bool WasReleased => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKeyUp(Key));
 
         internal void RaisePressed() { try { Pressed?.Invoke(); } catch { } }
         private static bool Safe(Func<bool> f) { try { return f(); } catch { return false; } }
@@ -91,6 +92,7 @@ namespace ASL
         private void Poll()
         {
             if (_rebinding != null) { CaptureRebind(); return; }
+            if (UiRuntime.IsTextInputFocused) return;   // typing in an ASL text field: no mod keybind fires
 
             // Fire Pressed events (WasPressed polling works without this, but events are handy).
             for (int i = 0; i < _binds.Count; i++)
