@@ -85,8 +85,8 @@ namespace ASL
                         {
                             var path = StorageNames.SafeJoin(dir, ar.File);
                             if (!File.Exists(path)) { _log.LogError($"  '{id}': audio file not found: {ar.File}"); continue; }
-                            var wav = WavDecoder.Decode(File.ReadAllBytes(path));
-                            _audio.Register(id, ar.Target, Path.GetFileNameWithoutExtension(path), wav);
+                            // Keep the raw bytes; AudioSwaps decodes them the first time the target clip is found.
+                            _audio.Register(id, ar.Target, Path.GetFileNameWithoutExtension(path), File.ReadAllBytes(path));
                         }
                         catch (Exception ex) { _log.LogError($"  '{id}': audio '{ar.File}' skipped: {ex.Message}"); }
                     }

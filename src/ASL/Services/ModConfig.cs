@@ -42,6 +42,9 @@ namespace ASL
 
         public abstract void ResetToDefault();
 
+        /// <summary>Stop listening to the underlying BepInEx entry and drop all handlers (the owning mod was released).</summary>
+        internal abstract void Detach();
+
         /// <summary>Raised after the value changed (menu, code or file reload). Handlers are isolated by the raiser.</summary>
         public event Action ValueChanged;
 
@@ -62,7 +65,7 @@ namespace ASL
     /// <c>BepInEx/config/&lt;modId&gt;.cfg</c> (<c>SaveOnConfigSet</c> on). The file object is created on the
     /// first Bind/Save/Reload, so a mod that never uses config costs nothing and touches no disk.
     /// </summary>
-    internal sealed class ModConfig : IAslConfig
+    internal sealed class ModConfig : IAslConfig, IDisposable
     {
         private readonly string _modId;
         private readonly ManualLogSource _log;
@@ -76,6 +79,8 @@ namespace ASL
             _modId = modId;
             _log = log;
         }
+
+        private bool _released;
 
         public bool ShowInMenu { get; set; } = true;
 
@@ -150,8 +155,17 @@ namespace ASL
             return f;
         }
 
+        /// <summary>Release: detach every entry from BepInEx and drop the mod's handlers so a released (or hot-reloaded) mod is never called again. The .cfg file keeps its values.</summary>
+        public void Dispose()
+        {
+            _released = true;
+            foreach (var e in _entries) { try { e.Detach(); } catch { } }
+            Changed = null;
+        }
+
         internal void RaiseChanged()
         {
+            if (_released) return;
             var h = Changed;
             if (h == null) return;
             foreach (var d in h.GetInvocationList())
@@ -191,6 +205,12 @@ namespace ASL
             string IConfigEntry<T>.Description => Description;
 
             public event Action<T> Changed;
+
+            internal override void Detach()
+            {
+                _raw.SettingChanged -= OnRawChanged;
+                Changed = null;
+            }
 
             public void Reset() => _raw.Value = _default;
             public override void ResetToDefault() => Reset();

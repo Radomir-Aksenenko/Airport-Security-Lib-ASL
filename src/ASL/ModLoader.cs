@@ -276,11 +276,14 @@ namespace ASL
         public void UnloadAll()
         {
             if (_watching) { _watching = false; (_bus as EventBus)?.Unregister((IFrameParticipant)this); }
-            foreach (var m in _loaded)
+            // Reverse load order: dependents are torn down before the mods they depend on.
+            for (int i = _loaded.Count - 1; i >= 0; i--)
             {
+                var m = _loaded[i];
                 try { m.Instance?.OnUnload(); }
                 catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' OnUnload threw: {ex.Message}"); }
-                m.Services?.Release();
+                try { m.Services?.Release(); }
+                catch (Exception ex) { _log.LogError($"'{m.Manifest.Id}' release threw: {ex.Message}"); }
             }
             _loaded.Clear();
         }
@@ -291,6 +294,18 @@ namespace ASL
         {
             var manifest = c.Manifest;
             var dir = c.Dir;
+
+            // A hard dependency that FAILED to load (compile error, OnLoad threw...) must not let its dependents load.
+            var depProblem = HardDependencyProblem(c);
+            if (depProblem != null)
+            {
+                c.Blocked = true;
+                c.Info.State = ModState.MissingDependency;
+                c.Info.Error = depProblem;
+                _log.LogWarning($"Skipping mod '{c.Display}' (id={manifest.Id}): {depProblem}.");
+                return;
+            }
+
             _log.LogInfo($"Loading mod '{c.Display}' v{manifest.Version} [{c.Kind.ToString().ToLowerInvariant()}] (id={manifest.Id})");
 
             if (c.Kind == ModKind.Script && manifest.HotReload) c.SourceSignature = Signature(c);
@@ -312,6 +327,21 @@ namespace ASL
                 throw;   // DiscoverAndLoad logs it, exactly as before
             }
             finally { _current = null; }
+        }
+
+        // null if every hard dependency is loaded; otherwise why not. Dependencies load first (resolver order), so their state is final here.
+        private string HardDependencyProblem(Candidate c)
+        {
+            var deps = c.Manifest.Dependencies;
+            if (deps == null) return null;
+            foreach (var raw in deps)
+            {
+                if (!DependencySpec.TryParse(raw, out var spec, out _)) continue;
+                if (!_byId.TryGetValue(spec.Id, out var dep) || dep.Info == null) continue;   // not installed: the resolver already handled that
+                if (dep.Info.State != ModState.Loaded)
+                    return $"requires '{spec.Id}' which did not load ({dep.Info.State}{(string.IsNullOrEmpty(dep.Info.Error) ? "" : ": " + dep.Info.Error)})";
+            }
+            return null;
         }
 
         private static string KindName(ModKind k) => k == ModKind.Dll ? "dll" : k == ModKind.Script ? "script" : k == ModKind.Content ? "content" : "unknown";
@@ -471,6 +501,7 @@ namespace ASL
             var input = new ModInput(manifest.Id, display, section, _keys, modLog);
             var info = _current ?? ModInfo.From(manifest, "dll", dir, display);   // _current is only null if the registry is unavailable
             var services = ModServices.Create(info, display, modLog, _bus, _ui);
+            services.Resources.Add(input.Release);   // this mod's keybind Pressed handlers go away with it
 
             IModHooks hooks = _hooks;
             if (_hookMgr != null)
@@ -495,6 +526,7 @@ namespace ASL
                 if (_current != null) { _current.State = ModState.Failed; _current.Error = "OnLoad threw: " + ex.Message; }
                 // A mod that failed to load must not keep running half-initialised: drop whatever OnLoad registered.
                 try { services.Release(); } catch (Exception rex) { _log.LogWarning($"  '{manifest.Id}': releasing after failed OnLoad threw: {rex.Message}"); }
+                section.Controls.Clear();   // and the F8 rows it added before failing
                 return null;
             }
         }
@@ -561,6 +593,7 @@ namespace ASL
                 {
                     var why = c.Info.Error ?? "unknown error";
                     _log.LogWarning($"Reload of '{manifest.Id}' failed: {why}");
+                    try { _menu.EnsureSection(c.Display).Controls.Clear(); } catch { }   // stale rows of the old instance
                     return (false, why);
                 }
 

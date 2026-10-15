@@ -6,6 +6,7 @@ namespace ASL.Api
     /// <summary>
     /// A semantic version (<c>major.minor.patch[-prerelease][+build]</c>). Pure C#, no game types.
     /// Lenient on input: <c>"1.2"</c> means 1.2.0, <c>"1"</c> means 1.0.0, a leading <c>v</c> is ignored.
+    /// A fourth numeric component (<c>"1.0.0.0"</c>, the .NET assembly style) is accepted and ignored.
     /// Build metadata is ignored when comparing. A version with a pre-release tag sorts before the same
     /// version without one (<c>1.0.0-beta.1 &lt; 1.0.0</c>).
     /// <code>
@@ -60,8 +61,8 @@ namespace ASL.Api
             if (dash >= 0) { pre = s.Substring(dash + 1); s = s.Substring(0, dash); if (pre.Length == 0) return false; }
 
             var parts = s.Split('.');
-            if (parts.Length < 1 || parts.Length > 3) return false;
-            var nums = new int[3];
+            if (parts.Length < 1 || parts.Length > 4) return false;   // a 4th numeric component ("1.0.0.0", .NET style) is accepted and ignored
+            var nums = new int[4];
             for (int i = 0; i < parts.Length; i++)
             {
                 if (parts[i].Length == 0 || !int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out nums[i])) return false;

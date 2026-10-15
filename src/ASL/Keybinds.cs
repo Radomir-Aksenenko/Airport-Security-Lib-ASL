@@ -31,6 +31,9 @@ namespace ASL
         public bool IsHeld      => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKey(Key));
         public bool WasReleased => Key != KeyCode.None && !UiRuntime.IsTextInputFocused && Safe(() => Input.GetKeyUp(Key));
 
+        /// <summary>Drop every <see cref="Pressed"/> subscriber (the owning mod was released / hot-reloaded). A bind is per-mod namespaced, so all its subscribers belong to that mod.</summary>
+        internal void ClearPressed() { Pressed = null; }
+
         internal void RaisePressed() { try { Pressed?.Invoke(); } catch { } }
         private static bool Safe(Func<bool> f) { try { return f(); } catch { return false; } }
     }
@@ -248,6 +251,7 @@ namespace ASL
         private readonly MenuManager.Section _section;
         private readonly KeybindManager _keys;
         private readonly ManualLogSource _log;
+        private readonly List<AslKeybind> _handedOut = new List<AslKeybind>();   // so Release can drop this mod's Pressed handlers
 
         public ModInput(string modId, string modName, MenuManager.Section section, KeybindManager keys, ManualLogSource log)
         {
@@ -265,7 +269,15 @@ namespace ASL
                 if (c is KeybindControl kc && kc.Bind != null && kc.Bind.Id == bind.Id) { present = true; break; }
             if (!present) _section.Controls.Add(new KeybindControl { Label = displayName ?? id, Bind = bind });
 
+            if (!_handedOut.Contains(bind)) _handedOut.Add(bind);
             return bind;
+        }
+
+        /// <summary>Clear the Pressed subscribers of every bind this mod registered (unload / hot reload / failed load). Idempotent.</summary>
+        internal void Release()
+        {
+            foreach (var b in _handedOut) b.ClearPressed();
+            _handedOut.Clear();
         }
 
         public bool GetKeyDown(KeyCode key) { try { return Input.GetKeyDown(key); } catch { return false; } }

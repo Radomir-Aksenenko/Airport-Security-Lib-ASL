@@ -16,13 +16,14 @@ namespace ASL
     /// change the cached tables are dropped (re-read on next use) and <see cref="LanguageChanged"/> fires.
     /// The constructor touches nothing, and the bus is only subscribed once the mod actually uses localization.
     /// </summary>
-    internal sealed class ModLocalization : IAslLocalization
+    internal sealed class ModLocalization : IAslLocalization, IDisposable
     {
         private readonly string _modId;
         private readonly string _modDirectory;
         private readonly ManualLogSource _log;
         private readonly IAslEvents _bus;
         private bool _subscribed;
+        private bool _disposed;
         private Action _changed;
 
         private Dictionary<string, string> _files;       // lang file base name → absolute path (lazy)
@@ -44,7 +45,7 @@ namespace ASL
 
         public event Action LanguageChanged
         {
-            add { _changed += value; Subscribe(); }
+            add { if (_disposed) return; _changed += value; Subscribe(); }
             remove { _changed -= value; }
         }
 
@@ -71,6 +72,14 @@ namespace ASL
         {
             if (_subscribed && _bus != null) _bus.LanguageChanged -= OnBusLanguageChanged;
             _subscribed = false;
+        }
+
+        /// <summary>Release: unsubscribe from the shared bus and drop the mod's handlers. Idempotent.</summary>
+        public void Dispose()
+        {
+            _disposed = true;
+            Detach();
+            _changed = null;
         }
 
         // Kept for older call sites; raises the mod-facing event.

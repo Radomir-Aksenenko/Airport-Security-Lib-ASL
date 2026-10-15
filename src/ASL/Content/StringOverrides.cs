@@ -19,6 +19,10 @@ namespace ASL
         private readonly Dictionary<string, string> _map = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly HashSet<string> _values = new HashSet<string>(StringComparer.Ordinal);
         private bool _failed;
+        private int _cursor;   // where the next capped pass resumes
+
+        /// <summary>Most labels examined per pass; bigger scenes are covered over successive passes (round robin).</summary>
+        private const int MaxPerPass = 3000;
 
         public StringOverrides(ManualLogSource log) => _log = log;
 
@@ -46,15 +50,23 @@ namespace ASL
             {
                 var all = Resources.FindObjectsOfTypeAll<TMP_Text>();
                 int applied = 0;
-                for (int i = 0; i < all.Length; i++)
+                int count = all.Length;
+                int budget = Math.Min(count, MaxPerPass);
+                if (_cursor >= count) _cursor = 0;
+                for (int n = 0; n < budget; n++)
                 {
+                    int i = _cursor + n;
+                    if (i >= count) i -= count;
                     var t = all[i];
                     if (t == null) continue;
+                    // FindObjectsOfTypeAll also returns prefabs / assets (not in any scene); never touch those.
+                    try { if (!t.gameObject.scene.IsValid()) continue; } catch { continue; }
                     var s = t.text;
                     if (s == null || s.Length == 0) continue;
                     if (_values.Contains(s)) continue;   // already one of our replacements
                     if (_map.TryGetValue(s, out var repl)) { t.text = repl; applied++; }
                 }
+                _cursor = count == 0 ? 0 : (_cursor + budget) % count;
                 if (applied > 0) _log.LogInfo($"[content] strings: rewrote {applied} text label(s) (experimental).");
             }
             catch (Exception ex)

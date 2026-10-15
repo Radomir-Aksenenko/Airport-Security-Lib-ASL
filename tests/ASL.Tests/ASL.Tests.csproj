@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Compile Include="../../src/ASL/Core/**/*.cs" />
+    <Compile Include="../../src/ASL/ModManifest.cs" />   <!-- pure System.Text.Json; no Unity types -->
     <ProjectReference Include="../../src/ASL.API/ASL.API.csproj" />
   </ItemGroup>
 

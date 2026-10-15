@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using ASL.Api;
+using ASL.Core;
 using BepInEx.Logging;
 using Metater;
 
@@ -13,16 +14,18 @@ namespace ASL
     /// <list type="bullet">
     /// <item>A mod's Update / LateUpdate handlers run inside that mod's own try/catch and are timed (Stopwatch
     /// ticks, no allocation) for the <see cref="Profiler"/>; one throwing mod never stops the others.</item>
-    /// <item>A mod whose Update (or LateUpdate) throws on <see cref="MaxConsecutiveFailures"/> frames in a row is
-    /// switched off for the rest of the session (one error log), so it cannot flood the log or the frame.</item>
+    /// <item>A mod whose Update (or LateUpdate) throws is never switched off for good: after
+    /// <see cref="MaxConsecutiveFailures"/> throwing frames in a row it is retried on a backoff schedule
+    /// (0.5 s, 1 s, 2 s ... capped at 5 s) with at most one error log per retry, and any success (or a scene /
+    /// local-player change) puts it back on every frame - see <see cref="FrameBackoff"/>.</item>
     /// <item>The infrequent events are dispatched per handler with errors attributed to the mod.</item>
     /// <item>After <see cref="Release"/> the proxy is inert: subscriptions are ignored and nothing is invoked.</item>
     /// </list>
     /// </summary>
     internal sealed class ModEvents : IAslEvents, IFrameParticipant, IEventSink
     {
-        /// <summary>Consecutive throwing frames after which a mod's Update (or LateUpdate) is disabled.</summary>
-        public const int MaxConsecutiveFailures = 10;
+        /// <summary>Consecutive throwing frames after which a mod's Update (or LateUpdate) is only retried on a backoff schedule.</summary>
+        public const int MaxConsecutiveFailures = FrameBackoff.FreeFailures;
 
         private readonly string _modId;
         private readonly EventBus _bus;
@@ -36,9 +39,7 @@ namespace ASL
         private Action<MetaPlayer> _localPlayerChanged;
         private Action<bool> _menuVisibilityChanged;
 
-        private int _updateFails, _lateFails;
-        private bool _updateDisabled, _lateDisabled;
-        private long _lastFailLogTicks;
+        private FrameBackoff _updateBackoff, _lateBackoff;
 
         public ModEvents(string modId, IAslEvents sharedBus, ManualLogSource log = null, ModPerf perf = null)
         {
@@ -50,9 +51,9 @@ namespace ASL
 
         public string ModId => _modId;
 
-        /// <summary>True once Update (or LateUpdate) has been switched off after repeated exceptions.</summary>
-        public bool UpdateDisabled => _updateDisabled;
-        public bool LateUpdateDisabled => _lateDisabled;
+        /// <summary>True while Update (or LateUpdate) is being retried on a backoff schedule after repeated exceptions.</summary>
+        public bool UpdateDisabled => _updateBackoff.InBackoff;
+        public bool LateUpdateDisabled => _lateBackoff.InBackoff;
 
         /// <summary>Register with the bus now (keeps per-frame order = load order). Otherwise this happens on the first subscription.</summary>
         public void Attach()
@@ -95,49 +96,48 @@ namespace ASL
 
         public void FrameUpdate(float deltaTime, float unscaledDeltaTime)
         {
-            if (_released || _updateDisabled) return;
+            if (_released) return;
             var h = _update;
             if (h == null) return;
 
             long t0 = Stopwatch.GetTimestamp();
-            try { h(); _updateFails = 0; }
-            catch (Exception ex) { OnFrameFailure(ex, "Update", ref _updateFails, ref _updateDisabled); if (_updateDisabled) _perf.UpdateDisabled = true; }
+            if (!_updateBackoff.ShouldRun(t0)) return;
+            try { h(); _updateBackoff.Success(); _perf.UpdateDisabled = false; }
+            catch (Exception ex) { OnFrameFailure(ex, "Update", ref _updateBackoff); _perf.UpdateDisabled = _updateBackoff.InBackoff; }
             _perf.UpdateTicks += Stopwatch.GetTimestamp() - t0;
         }
 
         public void FrameLateUpdate()
         {
-            if (_released || _lateDisabled) return;
+            if (_released) return;
             var h = _lateUpdate;
             if (h == null) return;
 
             long t0 = Stopwatch.GetTimestamp();
-            try { h(); _lateFails = 0; }
-            catch (Exception ex) { OnFrameFailure(ex, "LateUpdate", ref _lateFails, ref _lateDisabled); if (_lateDisabled) _perf.LateUpdateDisabled = true; }
+            if (!_lateBackoff.ShouldRun(t0)) return;
+            try { h(); _lateBackoff.Success(); _perf.LateUpdateDisabled = false; }
+            catch (Exception ex) { OnFrameFailure(ex, "LateUpdate", ref _lateBackoff); _perf.LateUpdateDisabled = _lateBackoff.InBackoff; }
             _perf.LateUpdateTicks += Stopwatch.GetTimestamp() - t0;
         }
 
-        // Logs the first failure of a streak (at most about once a second overall) and one final line when the event is switched off.
-        private void OnFrameFailure(Exception ex, string name, ref int fails, ref bool disabled)
+        // Logs the first failure of a streak, then (once backing off) at most one line per retry window with the
+        // number of failures that were not logged. Only the failure path allocates, never the happy path.
+        private void OnFrameFailure(Exception ex, string name, ref FrameBackoff backoff)
         {
-            fails++;
-            long now = Stopwatch.GetTimestamp();
-            if (fails >= MaxConsecutiveFailures)
-            {
-                disabled = true;
-                SafeLog($"'{_modId}': {name} handlers threw on {fails} consecutive frames - disabling them for this session. Last error: {ex}");
-            }
-            else if (fails == 1 && (_lastFailLogTicks == 0 || now - _lastFailLogTicks > Stopwatch.Frequency))
-            {
-                _lastFailLogTicks = now;
-                SafeLog($"'{_modId}': {name} handler threw (the mod is disabled if this repeats {MaxConsecutiveFailures} frames in a row): {ex}");
-            }
+            if (!backoff.Failure(Stopwatch.GetTimestamp(), Stopwatch.Frequency, out int suppressed)) return;
+            string more = suppressed > 0 ? $" (+{suppressed} similar error(s) not logged)" : "";
+            if (backoff.InBackoff)
+                SafeLog($"'{_modId}': {name} handler keeps throwing ({backoff.Failures} frames in a row); retrying with backoff, up to every {FrameBackoff.MaxDelaySeconds:0.#} s{more}: {ex}");
+            else
+                SafeLog($"'{_modId}': {name} handler threw (it is retried with backoff if this repeats {MaxConsecutiveFailures} frames in a row){more}: {ex}");
         }
 
         // ---- infrequent events (IEventSink) ------------------------------------------------------
 
-        public void OnSceneChanged(string sceneName) => Dispatch(_sceneChanged, sceneName, "SceneChanged");
-        public void OnLocalPlayerChanged(MetaPlayer player) => Dispatch(_localPlayerChanged, player, "LocalPlayerChanged");
+        // A scene / player change is when "throw until the player exists" mods become healthy again: retry every frame.
+        public void OnSceneChanged(string sceneName) { ResetBackoff(); Dispatch(_sceneChanged, sceneName, "SceneChanged"); }
+        public void OnLocalPlayerChanged(MetaPlayer player) { ResetBackoff(); Dispatch(_localPlayerChanged, player, "LocalPlayerChanged"); }
+        private void ResetBackoff() { _updateBackoff.Reset(); _lateBackoff.Reset(); _perf.UpdateDisabled = false; _perf.LateUpdateDisabled = false; }
         public void OnMenuVisibilityChanged(bool visible) => Dispatch(_menuVisibilityChanged, visible, "MenuVisibilityChanged");
         public void OnAllModsLoaded() => Dispatch(_allModsLoaded, "AllModsLoaded");
         public void OnLanguageChanged(string language) => Dispatch(_languageChanged, language, "LanguageChanged");

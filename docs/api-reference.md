@@ -70,6 +70,11 @@ public interface IAslEvents
 - **`SceneChanged`** / **`LocalPlayerChanged`** are detected by a lightweight poll (a few times a
   second), so they cost nothing per frame. `LocalPlayerChanged` is debounced to avoid flicker
   during transitions.
+- If an `Update`/`LateUpdate` handler throws, ASL logs it and keeps calling it every frame; after 10 failing
+  frames in a row it is retried with backoff (0.5 s, 1 s ... max 5 s, one log line per retry) and goes back to
+  every frame on the first success or on a scene / local-player change. It is never switched off permanently.
+- **`GameQuitting`** fires at most once, best effort, from the application-quit message (BepInEx IL2CPP does not
+  reliably call plugin unload on exit). Keep the handler quick; `OnUnload` runs right after, in reverse load order.
 - `MetaPlayer` is a game type from `Assembly-CSharp` (namespace `Metater`). Reference that interop
   assembly (DLL mods) — script mods already have it.
 

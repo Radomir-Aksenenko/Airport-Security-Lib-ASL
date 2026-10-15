@@ -29,7 +29,7 @@ namespace ASL
         [JsonPropertyName("entry")] public string Entry { get; set; }
 
         /// <summary>Declarative, code-free content for <c>type: "content"</c> mods.</summary>
-        [JsonPropertyName("content")] public ContentSpec Content { get; set; }
+        [JsonPropertyName("content")] [JsonConverter(typeof(LenientObjectConverter<ContentSpec>))] public ContentSpec Content { get; set; }
 
         // ---- v2 fields (all optional; parsed by 2.0, acted on by the Core/Data/UI subsystems) ----
 
@@ -46,41 +46,41 @@ namespace ASL
         [JsonPropertyName("loadBefore")] [JsonConverter(typeof(LenientStringArrayConverter))] public string[] LoadBefore { get; set; }
 
         /// <summary>Minimum ASL version required (semver, e.g. <c>"2.0.0"</c>). Older ASL marks the mod Incompatible.</summary>
-        [JsonPropertyName("minAslVersion")] public string MinAslVersion { get; set; }
+        [JsonPropertyName("minAslVersion")] [JsonConverter(typeof(LenientStringConverter))] public string MinAslVersion { get; set; }
 
         /// <summary>Free-form tags shown in the Mod Manager.</summary>
         [JsonPropertyName("tags")] [JsonConverter(typeof(LenientStringArrayConverter))] public string[] Tags { get; set; }
 
         /// <summary>Project/home page URL.</summary>
-        [JsonPropertyName("website")] public string Website { get; set; }
+        [JsonPropertyName("website")] [JsonConverter(typeof(LenientStringConverter))] public string Website { get; set; }
 
         /// <summary>Icon PNG path relative to the mod folder (Mod Manager).</summary>
-        [JsonPropertyName("icon")] public string Icon { get; set; }
+        [JsonPropertyName("icon")] [JsonConverter(typeof(LenientStringConverter))] public string Icon { get; set; }
 
         /// <summary>Declarative UI layout files (relative paths) auto-loaded for any mod kind, content mods included.</summary>
         [JsonPropertyName("ui")] [JsonConverter(typeof(LenientStringArrayConverter))] public string[] Ui { get; set; }
 
         /// <summary>Script mods only: watch source files and reload the mod when they change.</summary>
-        [JsonPropertyName("hotReload")] public bool HotReload { get; set; }
+        [JsonPropertyName("hotReload")] [JsonConverter(typeof(LenientBoolConverter))] public bool HotReload { get; set; }
     }
 
     /// <summary>No-code content a mod applies to the game.</summary>
     public sealed class ContentSpec
     {
         /// <summary>Texture swaps: replace a named game texture with a PNG shipped in the mod.</summary>
-        [JsonPropertyName("textures")] public TextureReplacement[] Textures { get; set; }
+        [JsonPropertyName("textures")] [JsonConverter(typeof(LenientArrayConverter<TextureReplacement>))] public TextureReplacement[] Textures { get; set; }
 
         /// <summary>If true, ASL logs a sample of loaded texture names (to help find swap targets).</summary>
-        [JsonPropertyName("listTextureNames")] public bool ListTextureNames { get; set; }
+        [JsonPropertyName("listTextureNames")] [JsonConverter(typeof(LenientBoolConverter))] public bool ListTextureNames { get; set; }
 
         /// <summary>Audio swaps: AudioSources playing a clip named <c>target</c> get a WAV shipped in the mod.</summary>
-        [JsonPropertyName("audio")] public AudioReplacement[] Audio { get; set; }
+        [JsonPropertyName("audio")] [JsonConverter(typeof(LenientArrayConverter<AudioReplacement>))] public AudioReplacement[] Audio { get; set; }
 
         /// <summary>Text swaps (experimental): on-screen text exactly equal to a key is replaced by its value.</summary>
-        [JsonPropertyName("strings")] public Dictionary<string, string> Strings { get; set; }
+        [JsonPropertyName("strings")] [JsonConverter(typeof(LenientStringMapConverter))] public Dictionary<string, string> Strings { get; set; }
 
         /// <summary>If true, ASL logs the distinct AudioClip names it finds (to help find swap targets).</summary>
-        [JsonPropertyName("listAudioNames")] public bool ListAudioNames { get; set; }
+        [JsonPropertyName("listAudioNames")] [JsonConverter(typeof(LenientBoolConverter))] public bool ListAudioNames { get; set; }
     }
 
     /// <summary>One texture swap: game texture named <see cref="Target"/> ← PNG file <see cref="File"/>.</summary>
@@ -144,6 +144,128 @@ namespace ASL
             writer.WriteStartArray();
             foreach (var v in value) writer.WriteStringValue(v);
             writer.WriteEndArray();
+        }
+    }
+
+    /// <summary>A string, or null for any other JSON shape (never throws).</summary>
+    internal sealed class LenientStringConverter : JsonConverter<string>
+    {
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String) return reader.GetString();
+            reader.Skip();
+            return null;
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value == null) writer.WriteNullValue(); else writer.WriteStringValue(value);
+        }
+    }
+
+    /// <summary>
+    /// A bool: <c>true</c>/<c>false</c>, the strings <c>"true"</c>/<c>"false"</c>/<c>"yes"</c>/<c>"no"</c>/<c>"on"</c>/<c>"off"</c>/<c>"1"</c>/<c>"0"</c>,
+    /// or a number (non-zero = true). Anything else is false. Never throws.
+    /// </summary>
+    internal sealed class LenientBoolConverter : JsonConverter<bool>
+    {
+        public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.True: return true;
+                case JsonTokenType.False: return false;
+                case JsonTokenType.Number:
+                    return reader.TryGetDouble(out var d) && d != 0;
+                case JsonTokenType.String:
+                    switch ((reader.GetString() ?? "").Trim().ToLowerInvariant())
+                    {
+                        case "true": case "yes": case "on": case "1": return true;
+                        default: return false;
+                    }
+                default:
+                    reader.Skip();
+                    return false;
+            }
+        }
+
+        public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) => writer.WriteBooleanValue(value);
+    }
+
+    /// <summary>An array of objects; elements that are not valid objects of <typeparamref name="T"/> are skipped, any other shape yields null.</summary>
+    internal sealed class LenientArrayConverter<T> : JsonConverter<T[]> where T : class
+    {
+        public override T[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray) { reader.Skip(); return null; }
+            var list = new List<T>();
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (reader.TokenType != JsonTokenType.StartObject) { reader.Skip(); continue; }
+                try
+                {
+                    using var doc = JsonDocument.ParseValue(ref reader);
+                    var item = doc.RootElement.Deserialize<T>(options);
+                    if (item != null) list.Add(item);
+                }
+                catch (JsonException) { /* bad element: skip it */ }
+            }
+            return list.ToArray();
+        }
+
+        public override void Write(Utf8JsonWriter writer, T[] value, JsonSerializerOptions options)
+        {
+            if (value == null) { writer.WriteNullValue(); return; }
+            writer.WriteStartArray();
+            foreach (var v in value) JsonSerializer.Serialize(writer, v, options);
+            writer.WriteEndArray();
+        }
+    }
+
+    /// <summary>A JSON object of string values; non-string values are skipped, any other shape yields null.</summary>
+    internal sealed class LenientStringMapConverter : JsonConverter<Dictionary<string, string>>
+    {
+        public override Dictionary<string, string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject) { reader.Skip(); return null; }
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                var key = reader.GetString();
+                reader.Read();
+                if (reader.TokenType == JsonTokenType.String) map[key] = reader.GetString();
+                else reader.Skip();
+            }
+            return map;
+        }
+
+        public override void Write(Utf8JsonWriter writer, Dictionary<string, string> value, JsonSerializerOptions options)
+        {
+            if (value == null) { writer.WriteNullValue(); return; }
+            writer.WriteStartObject();
+            foreach (var kv in value) writer.WriteString(kv.Key, kv.Value);
+            writer.WriteEndObject();
+        }
+    }
+
+    /// <summary>A nested object; a non-object value or a malformed object yields null instead of failing the whole manifest.</summary>
+    internal sealed class LenientObjectConverter<T> : JsonConverter<T> where T : class
+    {
+        public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject) { reader.Skip(); return null; }
+            try
+            {
+                using var doc = JsonDocument.ParseValue(ref reader);
+                return doc.RootElement.Deserialize<T>(options);
+            }
+            catch (JsonException) { return null; }
+        }
+
+        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+        {
+            if (value == null) { writer.WriteNullValue(); return; }
+            JsonSerializer.Serialize(writer, value, options);
         }
     }
 }

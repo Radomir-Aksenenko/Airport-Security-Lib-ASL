@@ -226,6 +226,29 @@ namespace ASL.Data.Tests
         [Fact] public void ZeroRate_Throws() => Assert.Throws<InvalidDataException>(() => WavDecoder.Decode(Riff(Fmt(1, 1, 0, 16), Chunk("data", new byte[8]))));
 
         [Fact]
+        public void DataChunkSizeZero_UsesRemainingBytes()
+        {
+            var data = new byte[] { 0x00, 0x40, 0x00, 0xC0 };   // two 16-bit mono samples
+            var b = Riff(Fmt(1, 1, 44100, 16), Chunk("data", data));
+            int dataHdr = b.Length - data.Length - 4;           // the size field of the data chunk
+            b[dataHdr] = b[dataHdr + 1] = b[dataHdr + 2] = b[dataHdr + 3] = 0;
+            var w = WavDecoder.Decode(b);
+            Assert.Equal(2, w.FrameCount);
+            Assert.Equal(0.5f, w.Samples[0], 3);
+            Assert.Equal(-0.5f, w.Samples[1], 3);
+        }
+
+        [Fact]
+        public void DataChunkSizeMax_UsesRemainingBytes()
+        {
+            var data = new byte[] { 0x00, 0x40, 0x00, 0xC0 };
+            var b = Riff(Fmt(1, 1, 44100, 16), Chunk("data", data));
+            int dataHdr = b.Length - data.Length - 4;
+            b[dataHdr] = b[dataHdr + 1] = b[dataHdr + 2] = b[dataHdr + 3] = 0xFF;
+            Assert.Equal(2, WavDecoder.Decode(b).FrameCount);
+        }
+
+        [Fact]
         public void BadBlockAlign_Throws()
         {
             var fmt = Fmt(1, 2, 44100, 16);

@@ -4,6 +4,24 @@ All notable changes to **ASL — Airport Security Lib** are documented here. The
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); ASL is pre-1.0, so the public API
 (`ASL.API`) may still change between minor versions until 1.0.
 
+## [Unreleased] — 2.0 hardening (not yet verified in-game)
+
+- `ctx.Events.Update` / `LateUpdate`: a throwing handler is no longer switched off after 10 failing frames; it is
+  retried with backoff (0.5 s ... 5 s) and returns to every-frame on the first success or a scene / player change.
+- Hot reload and unload now clear a mod's keybind `Pressed` handlers, localization/config subscriptions and cached
+  assets (bundles unloaded, textures/sprites/clips destroyed). A failed `OnLoad` or reload compile also clears the
+  mod's F8 rows.
+- `GameQuitting` / `OnUnload` also run from the application-quit message (best effort; keep handlers quick). Mods
+  unload in reverse load order. Mods whose hard dependency failed to load are skipped (`MissingDependency`).
+- `SemVersion` accepts a 4th numeric component (`1.0.0.0`). `VersionRange` excludes pre-releases unless a bound is a
+  pre-release of the same `major.minor.patch` (npm semantics), so `^1.0.0` no longer accepts `2.0.0-beta.1`.
+- Manifest fields `icon`, `website`, `minAslVersion`, `hotReload`, `content.*` tolerate a wrong JSON shape
+  (ignored / default) instead of failing the whole manifest. `hotReload` accepts `true`/`false`/`"true"`/`1`.
+- Storage / config file names that had to be sanitized now get a short stable hash suffix (`a/b` -> `a_b~a22d4fe9`),
+  so `a/b` and `a_b` no longer share a file; already-clean names are unchanged. WAV `data` chunks of size 0 use the
+  rest of the file. Content audio swaps keep raw bytes and decode on first use; string overrides skip prefabs/assets
+  and cap work per pass. `MenuVisibilityChanged` is raised after the native menu has reacted.
+
 ## [0.1.0] — 2026-06-17
 
 First public release. Everything below is implemented and verified in-game.
